@@ -29,6 +29,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'proxy_config_title': 'Codex 代理配置',
     'proxy_config_desc': '配置启用代理时写入 Codex 的默认模型和推理努力度等字段',
     'model_reasoning_effort': '推理努力度',
+    'default_model': '默认模型',
     'test_model': '测试模型',
     'select_model_placeholder': '从已选模型中选择',
     'field_provider_id': '提供商 ID',
@@ -87,16 +88,6 @@ const messages: Record<Lang, Record<string, string>> = {
     'lang_label': '{lang}',
     'runtime': '运行时',
     'version': '版本',
-
-    // Auth
-    'auth_title': '认证等级切换',
-    'auth_desc': '切换认证等级后，启用代理时将自动写入 Codex 配置。\n所有认证令牌均为模拟令牌，仅供本地测试使用。',
-    'current_plan': '当前: {plan}',
-    'not_detected': '未检测',
-    'current_version': '当前版本',
-    'switch_version': '切换至此版本',
-    'auth_tip': '切换步骤：① 点击上方版本卡片 → ② 启用代理 → ③ 认证自动写入 ~/.codex/auth.json。\n切换版本或关闭代理时将自动还原原始配置。',
-    'switched_plan': '已切换至 {plan} 版，启用代理后将自动应用。',
 
     // ConfigEditor
     'codex_config_title': 'Codex 配置文件',
@@ -306,10 +297,11 @@ const messages: Record<Lang, Record<string, string>> = {
     'collapse_presets': 'Collapse Presets',
     'back_to_list': 'Back to List',
     'fetch_models': 'Fetch Models',
-        'proxy_config_title': 'Codex Proxy Config',
+    'proxy_config_title': 'Codex Proxy Config',
     'proxy_config_desc': 'Configure default model and reasoning effort written to Codex when proxy is enabled',
     'model_reasoning_effort': 'Reasoning Effort',
     'test_model': 'Test Model',
+    'default_model': 'Default Model',
     'select_model_placeholder': 'Select from models above',
     'field_provider_id': 'Provider ID',
     'field_name': 'Name',
@@ -361,16 +353,6 @@ const messages: Record<Lang, Record<string, string>> = {
     'auto_start': 'Auto-start Proxy',
     'auto_start_desc': 'Auto-enable proxy when IronLink starts',
     'runtime': 'Runtime',
-
-    // Auth
-    'auth_title': 'Auth Level Switch',
-    'auth_desc': 'Switching auth level will apply to Codex config when proxy is enabled.\nAll tokens are fake and for local testing only.',
-    'current_plan': 'Current: {plan}',
-    'not_detected': 'Not detected',
-    'current_version': 'Current',
-    'switch_version': 'Switch',
-    'auth_tip': 'Steps: ① Click plan card → ② Enable proxy → ③ Auth automatically written to ~/.codex/auth.json.\nSwitching plans or disabling proxy restores the original.',
-    'switched_plan': 'Switched to {plan}. It will take effect when proxy is enabled.',
 
     // ConfigEditor
     'codex_config_title': 'Codex Config Files',
@@ -465,7 +447,7 @@ interface I18nCtx {
 
 const I18nContext = createContext<I18nCtx>({
   lang: 'zh',
-  setLang: () => {},
+  setLang: () => { },
   t: (k: string) => k,
 });
 

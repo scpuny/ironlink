@@ -30,7 +30,6 @@ pub fn start_proxy(state: Arc<AppState>) {
             .route("/api/logs", get(api::get_logs))
             .route("/api/profiles", get(api::get_profiles).put(api::put_profiles))
             .route("/api/profiles/activate", post(api::post_profiles_activate))
-            .route("/api/auth", get(api::get_auth).put(api::put_auth))
             .route("/api/config", get(api::get_config).put(api::put_config))
             .route("/v1/models", get(proxy::handle_models))
             .route("/v1/{*path}", any(proxy::handle_proxy))
@@ -82,13 +81,9 @@ pub fn run() {
             commands::get_config_file,
             commands::write_config_file,
             commands::get_logs,
-            commands::get_auth_file,
-            commands::write_auth_file,
             commands::get_auto_start,
             commands::set_auto_start,
             commands::get_codex_config_file,
-            commands::get_codex_auth_file,
-            commands::write_codex_auth_file,
             commands::get_profiles,
             commands::save_profiles,
             commands::activate_profile,

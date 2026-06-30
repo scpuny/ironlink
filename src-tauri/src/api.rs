@@ -200,24 +200,5 @@ pub async fn post_profiles_activate(
     StatusCode::OK
 }
 
-// ── GET /api/auth ──
 
-pub async fn get_auth() -> (StatusCode, String) {
-    let content = config::read_auth();
-    (StatusCode::OK, content)
-}
-
-// ── PUT /api/auth ──
-
-pub async fn put_auth(
-    Json(body): Json<ConfigBody>,
-) -> StatusCode {
-    match config::write_auth(&body.content) {
-        Ok(_) => StatusCode::OK,
-        Err(e) => {
-            tracing::error!("Failed to write auth: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        }
-    }
-}
 

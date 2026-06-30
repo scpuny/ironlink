@@ -73,18 +73,6 @@ pub async fn get_logs(state: State<'_, Arc<AppState>>) -> Result<Vec<String>, St
     Ok(state.log_buffer.lock().await.clone())
 }
 
-// ── Auth File ──
-
-#[tauri::command]
-pub async fn get_auth_file() -> String {
-    config::read_auth()
-}
-
-#[tauri::command]
-pub async fn write_auth_file(content: String) -> Result<(), String> {
-    config::write_auth(&content).map_err(|e| e.to_string())
-}
-
 // ── Auto-start ──
 
 #[tauri::command]
@@ -102,16 +90,6 @@ pub async fn set_auto_start(enabled: bool) -> Result<(), String> {
 #[tauri::command]
 pub async fn get_codex_config_file() -> String {
     config::read_codex_config()
-}
-
-#[tauri::command]
-pub async fn get_codex_auth_file() -> String {
-    config::read_codex_auth()
-}
-
-#[tauri::command]
-pub async fn write_codex_auth_file(content: String) -> Result<(), String> {
-    config::write_codex_auth(&content).map_err(|e| e.to_string())
 }
 
 // ── Relay Profiles ──
@@ -230,3 +208,4 @@ pub async fn set_proxy_config(state: State<'_, Arc<AppState>>, config: ProxyConf
     *state.proxy_config.lock().await = config;
     Ok(())
 }
+

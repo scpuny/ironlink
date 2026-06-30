@@ -73,28 +73,10 @@ export function fetchCodexConfigFile(): Promise<string> {
   return tauriInvoke<string>('get_codex_config_file');
 }
 
-export function fetchCodexAuthFile(): Promise<string> {
-  return tauriInvoke<string>('get_codex_auth_file');
-}
-
-export function updateCodexAuthFile(content: string): Promise<void> {
-  return tauriInvoke<void>('write_codex_auth_file', { content });
-}
-
 // ── Logs ──
 
 export function fetchLogs(): Promise<string[]> {
   return tauriInvoke<string[]>('get_logs');
-}
-
-// ── Auth File ──
-
-export function fetchAuthFile(): Promise<string> {
-  return tauriInvoke<string>('get_auth_file');
-}
-
-export function writeAuthFile(content: string): Promise<void> {
-  return tauriInvoke<void>('write_auth_file', { content });
 }
 
 // ── Relay Profiles ──

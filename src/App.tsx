@@ -3,7 +3,7 @@ import { ConfigProvider, theme, Layout, Menu, Typography, Button, Space, Modal }
 import {
   DashboardOutlined, FileTextOutlined,
   ToolOutlined, SunOutlined, MoonOutlined, TranslationOutlined,
-  GithubOutlined, ApiOutlined, SafetyOutlined, BarsOutlined, InfoCircleOutlined,
+  GithubOutlined, ApiOutlined, BarsOutlined, InfoCircleOutlined,
 } from '@ant-design/icons';
 import { I18nProvider, useI18n } from './i18n';
 import { AppearanceProvider, useAppearance } from './appearance/store';
@@ -13,7 +13,6 @@ import StatusPanel from './components/pages/StatusPanel';
 import Providers from './components/pages/Providers';
 import ConfigEditor from './components/pages/ConfigEditor';
 import LogViewer from './components/pages/LogViewer';
-import AuthPage from './components/pages/Auth';
 import AboutPage from './components/pages/About';
 import SettingsPanel from './components/pages/Settings';
 import { useStatus } from './hooks/useApi';
@@ -24,14 +23,13 @@ const navItems = [
   { key: 'Status', icon: <DashboardOutlined />, labelKey: 'overview' },
   { key: 'Providers', icon: <ApiOutlined />, labelKey: 'providers' },
   { key: 'Config', icon: <FileTextOutlined />, labelKey: 'config' },
-  { key: 'Auth', icon: <SafetyOutlined />, labelKey: 'auth' },
   { key: 'Settings', icon: <ToolOutlined />, labelKey: 'settings' },
   { key: 'About', icon: <InfoCircleOutlined />, labelKey: 'about' },
 ];
 
 const pages: Record<string, React.FC> = {
   Providers: Providers,
-  Config: ConfigEditor, Auth: AuthPage, About: AboutPage, Settings: SettingsPanel,
+  Config: ConfigEditor, About: AboutPage, Settings: SettingsPanel,
 };
 
 function antdTokens(t: ThemeTokens, fontCss: string, baseSize: number) {

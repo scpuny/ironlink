@@ -70,7 +70,7 @@ pub struct ProxyConfig {
 impl Default for ProxyConfig {
     fn default() -> Self {
         Self {
-            default_model: "deepseek-v4-flash-free".into(),
+            default_model: "deepseek/deepseek-v4-flash".into(),
             reasoning_effort: "medium".into(),
         }
     }
@@ -137,6 +137,8 @@ pub struct ChatMessage {
     pub role: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

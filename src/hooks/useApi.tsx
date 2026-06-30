@@ -61,10 +61,6 @@ export function useLogs(autoRefresh: boolean) {
   return { data, loading, error, refetch: fetch };
 }
 
-export function useAuth() {
-  return useAsync(() => api.fetchAuthFile());
-}
-
 export function useProfiles() {
   return useAsync(() => api.fetchProfiles());
 }
