@@ -56,7 +56,13 @@ function antdTokens(t: ThemeTokens, fontCss: string, baseSize: number) {
 function AppInner() {
   const [page, setPage] = useState('Status');
   const [logModalOpen, setLogModalOpen] = useState(false);
-  const { data: status } = useStatus();
+  const { data: status, refetch: refetchStatus } = useStatus();
+
+  // Poll status every 2s to sync header with StatusPanel
+  useEffect(() => {
+    const id = setInterval(refetchStatus, 2000);
+    return () => clearInterval(id);
+  }, []);
   const { t, lang, setLang } = useI18n();
   const { themeStyle, themeMode, setThemeMode, textSize, fontFamily } = useAppearance();
   const fontFamilyCss = ({
