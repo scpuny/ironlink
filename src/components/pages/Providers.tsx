@@ -118,9 +118,27 @@ export default function Providers() {
     }
   }, [profilesData]);
 
+  // Get first model from enabled providers (with prefix)
+  const firstProviderModel = useMemo(() => {
+    for (const p of profiles) {
+      if (!p.enabled) continue;
+      if (p.model) return p.providerId + '/' + p.model;
+      const models = p.modelList.split(/[\n,]/).filter(Boolean);
+      if (models.length > 0) return p.providerId + '/' + models[0].trim().split(/\s+/)[0];
+    }
+    return '';
+  }, [profiles]);
+
   useEffect(() => {
-    if (proxyCfg) setProxyDraft(proxyCfg);
-  }, [proxyCfg]);
+    if (proxyCfg) {
+      // Use provider model as default if config has empty or hardcoded placeholder
+      const needsDefault = !proxyCfg.default_model || proxyCfg.default_model === 'deepseek-v4-flash-free';
+      setProxyDraft(needsDefault && firstProviderModel
+        ? { ...proxyCfg, default_model: firstProviderModel }
+        : proxyCfg
+      );
+    }
+  }, [proxyCfg, firstProviderModel]);
 
   // Sync draft when editing a profile
   useEffect(() => {
@@ -323,7 +341,7 @@ export default function Providers() {
           </Text>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div>
-              <Text style={{ fontSize: 12, display: 'block', marginBottom: 4, color: 'var(--text-secondary)' }}>{t('model_label')}</Text>
+              <Text style={{ fontSize: 12, display: 'block', marginBottom: 4, color: 'var(--text-secondary)' }}>{t('default_model')}</Text>
               <Select
                 value={proxyDraft?.default_model || undefined}
                 onChange={v => setProxyDraft(p => p ? { ...p, default_model: v || '' } : null)}
