@@ -32,7 +32,7 @@ fn find_profile<'a>(profiles: &'a [RelayProfile], body: &serde_json::Value) -> O
     // Fall back: match model name against any enabled profile's model_list
     profiles.iter().find(|p| {
         if !p.enabled { return false; }
-        p.model_list.lines().any(|m| m.trim() == model) || p.model == model
+        p.model_list.iter().any(|m| m == model) || p.model == model
     })
     .or_else(|| profiles.iter().find(|p| p.enabled))
 }
@@ -65,10 +65,9 @@ pub async fn handle_models(
 
     for p in profiles.iter().filter(|p| p.enabled) {
         let mut seen = std::collections::HashSet::new();
-        // Split model_list by newline first, then by space to handle messy entries
         let all_models: Vec<&str> = p.model_list
-            .split(|c| c == '\n' || c == ',')
-            .flat_map(|line| line.split_whitespace())
+            .iter()
+            .flat_map(|m| m.split_whitespace())
             .chain(std::iter::once(p.model.as_str()))
             .filter(|m| !m.is_empty())
             .collect();

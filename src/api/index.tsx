@@ -108,7 +108,7 @@ export type RelayProfileData = {
   protocol: string;
   model: string;
   test_model: string;
-  model_list: string;
+  model_list: string[];
   enabled: boolean;
   active: boolean;
 };

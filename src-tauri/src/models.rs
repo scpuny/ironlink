@@ -241,7 +241,7 @@ pub struct RelayProfile {
     pub protocol: String,
     pub model: String,
     pub test_model: String,
-    pub model_list: String,
+    pub model_list: Vec<String>,
     pub enabled: bool,
     pub active: bool,
 }

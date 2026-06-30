@@ -61,7 +61,7 @@ impl AppState {
                 protocol: "chatCompletions".into(),
                 model: "deepseek-chat".into(),
                 test_model: String::new(),
-                model_list: String::new(),
+                model_list: Vec::new(),
                 enabled: true,
                 active: true,
             }]

@@ -60,7 +60,7 @@ interface RelayProfile {
   protocol: 'responses' | 'chatCompletions' | 'anthropic';
   model: string;
   testModel: string;
-  modelList: string;
+  modelList: string[];
   enabled: boolean;
   active: boolean;
 }
@@ -69,7 +69,7 @@ function fromApiProfile(p: RelayProfileData): RelayProfile {
   return {
     id: p.id, providerId: p.provider_id, name: p.name, baseUrl: p.base_url, apiKey: p.api_key,
     protocol: p.protocol as 'responses' | 'chatCompletions',
-    model: p.model, testModel: p.test_model, modelList: p.model_list, active: p.active, enabled: p.enabled,
+    model: p.model, testModel: p.test_model, modelList: p.model_list || [], active: p.active, enabled: p.enabled,
   };
 }
 
@@ -90,7 +90,7 @@ function createProfileFromPreset(preset: ProviderPreset): RelayProfile {
   return {
     id: genId(), providerId: preset.name.toLowerCase().replace(/[^a-z0-9]/g, '-'), name: preset.name, baseUrl: preset.baseUrl, apiKey: '',
     protocol: preset.protocol, model: preset.model, testModel: preset.model,
-    modelList: (preset.modelList || []).join('\n'), active: false, enabled: true,
+    modelList: preset.modelList || [], active: false, enabled: true,
   };
 }
 
@@ -123,8 +123,7 @@ export default function Providers() {
     for (const p of profiles) {
       if (!p.enabled) continue;
       if (p.model) return p.providerId + '/' + p.model;
-      const models = p.modelList.split(/[\n,]/).filter(Boolean);
-      if (models.length > 0) return p.providerId + '/' + models[0].trim().split(/\s+/)[0];
+      if (p.modelList.length > 0) return p.providerId + '/' + p.modelList[0];
     }
     return '';
   }, [profiles]);
@@ -164,7 +163,7 @@ export default function Providers() {
   const handleAddEmpty = () => {
     const np: RelayProfile = {
       id: genId(), providerId: '', name: t('new_provider'), baseUrl: '', apiKey: '',
-      protocol: 'chatCompletions', model: '', testModel: '', modelList: '', active: false, enabled: true,
+      protocol: 'chatCompletions', model: '', testModel: '', modelList: [], active: false, enabled: true,
     };
     setProfiles(prev => [...prev, np]);
     setEditingId(np.id);
@@ -179,9 +178,8 @@ export default function Providers() {
     try {
       const url = profile.baseUrl.replace(/\/+$/, '') + '/models';
       const models = await fetchUpstreamModels(url, profile.apiKey);
-      const modelList = models.join('\n');
-      setDraft(prev => prev ? { ...prev, modelList } : null);
-      setProfiles(prev => prev.map(p => p.id === profile.id ? { ...p, modelList } : p));
+      setDraft(prev => prev ? { ...prev, modelList: models } : null);
+      setProfiles(prev => prev.map(p => p.id === profile.id ? { ...p, modelList: models } : p));
     } catch (e: any) {
       antMsg.error(t('fetch_models_failed', { msg: e?.message || String(e) }));
     } finally {
@@ -361,9 +359,7 @@ export default function Providers() {
                       if (!seen.has(key)) { seen.add(key); result.push({ value: key, label: key }); }
                     };
                     // Split by newline then by space to handle messy model_list entries
-                    p.modelList.split(/[\n,]/).filter(Boolean).forEach(line => {
-                      line.split(/\s+/).filter(Boolean).forEach(m => add(m.trim()));
-                    });
+                    p.modelList.forEach(m => add(m));
                   }
                   // Also add provider.model as first option
                   for (const p of profiles) {
@@ -490,13 +486,13 @@ export default function Providers() {
                   loading={fetchingModels === draft?.id}
                   size="small"
                 >{t('fetch_models')}</Button>
-                {draft?.modelList.trim() && (
-                  <Tag>{draft.modelList.trim().split('\n').filter(Boolean).length} 个</Tag>
+                {draft && draft.modelList.length > 0 && (
+                  <Tag>{draft.modelList.length} 个</Tag>
                 )}
               </div>
-              {draft?.modelList.trim() ? (
+              {draft && draft.modelList.length > 0 && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 6, maxHeight: 180, overflowY: 'auto', padding: '4px 0' }}>
-                  {draft.modelList.trim().split('\n').map((m, i) => (
+                  {draft.modelList.map((m, i) => (
                     <div key={i} style={{
                       display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px',
                       borderRadius: 6, cursor: 'pointer', fontSize: 12, lineHeight: '22px',
@@ -509,21 +505,18 @@ export default function Providers() {
                       onMouseLeave={e => { if (draft.model !== m) e.currentTarget.style.borderColor = 'var(--border-subtle)'; }}
                     >
                       <Checkbox
-                        checked={draft.modelList.split('\n').includes(m)}
+                        checked={draft.modelList.includes(m)}
                         onClick={e => e.stopPropagation()}
                         onChange={(e) => {
-                          const models = draft.modelList.split('\n').filter(Boolean);
                           const next = e.target.checked
-                            ? [...models, m].join('\n')
-                            : models.filter(x => x !== m).join('\n');
+                            ? [...draft.modelList, m]
+                            : draft.modelList.filter(x => x !== m);
                           setDraft(p => p ? { ...p, modelList: next, model: e.target.checked && !p.model ? m : p.model } : null);
-                        }}
-                      />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m}</span>
+                        }} />
                     </div>
                   ))}
                 </div>
-              ) : null}
+              )}
             </div>
           </Field>
           <Field label={t('default_model')}>
@@ -533,7 +526,7 @@ export default function Providers() {
               placeholder={t('select_model_placeholder')}
               style={{ width: "100%" }}
               allowClear
-              options={(draft?.modelList || "").split("\n").filter(Boolean).map(m => ({ value: m, label: m }))}
+              options={(draft?.modelList || []).map(m => ({ value: m, label: m }))}
             />
           </Field>
           <Field label={t('test_model')}>
@@ -543,7 +536,7 @@ export default function Providers() {
               placeholder={t('select_model_placeholder')}
               style={{ width: "100%" }}
               allowClear
-              options={(draft?.modelList || "").split("\n").filter(Boolean).map(m => ({ value: m, label: m }))}
+              options={(draft?.modelList || []).map(m => ({ value: m, label: m }))}
             />
           </Field>
         </div>
@@ -609,9 +602,9 @@ function ProfileCard({
           >
             {profile.enabled ? t('enabled') : t('disabled')}
           </Tag>
-          {profile.modelList.trim() && (
+          {profile.modelList.length > 0 && (
             <Tag style={{ marginLeft: 4, fontSize: 9, lineHeight: '16px', padding: '0 4px', verticalAlign: 'middle' }}>
-              {t('models_count', { count: profile.modelList.trim().split('\n').filter(Boolean).length })}
+              {t('models_count', { count: profile.modelList.length })}
             </Tag>
           )}
         </strong>

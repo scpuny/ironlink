@@ -31,7 +31,7 @@ export default function StatusPanel() {
     return rawProfiles
       .map(p => ({
         id: p.id, name: p.name, baseUrl: p.base_url,
-        protocol: p.protocol, models: (p.model_list || '').split('\n').filter(Boolean),
+        protocol: p.protocol, models: p.model_list || [],
       }))
       .filter(p => p.models.length > 0);
   }, [rawProfiles]);
