@@ -307,21 +307,6 @@ pub fn write_profiles(profiles: &[RelayProfile]) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Read model list from the active relay profile on disk.
-fn read_active_profile_models() -> Vec<String> {
-    let profiles = read_profiles();
-    let active = profiles.iter().find(|p| p.active).or_else(|| profiles.first());
-    match active {
-        Some(p) => {
-            let mut models: Vec<String> = p.model_list.clone();
-            if !p.model.is_empty() && !models.contains(&p.model) {
-                models.insert(0, p.model.clone());
-            }
-            models
-        }
-        None => vec![],
-    }
-}
 
 /// Modify only the proxy-related fields in Codex config.toml, preserving everything else.
 /// Parse original → update specific keys → serialize back.
@@ -341,13 +326,35 @@ fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &st
         })
         .unwrap_or_default();
 
-    // Parse original TOML, or start empty
+    // Build model list from active relay profiles
+    let profiles = read_profiles();
+    let mut active_models: Vec<String> = Vec::new();
+    for p in &profiles {
+        if !p.enabled { continue; }
+        for m in &p.model_list {
+            let prefixed = format!("{}/{}", p.provider_id, m);
+            if !active_models.contains(&prefixed) {
+                active_models.push(prefixed);
+            }
+        }
+        if !p.model.is_empty() {
+            let prefixed = format!("{}/{}", p.provider_id, p.model);
+            if !active_models.contains(&prefixed) {
+                active_models.push(prefixed);
+            }
+        }
+    }
+
+    // Fallback: if no models from relay profiles, preserve existing config models
+    if active_models.is_empty() {
+        active_models = existing_models;
+    }
+
+    // Parse original TOML, or start empty — NOW take mutable borrow
     let mut root: toml::Value = original.parse::<toml::Value>().unwrap_or(toml::Value::Table(toml::value::Table::new()));
     let table = root.as_table_mut().unwrap();
 
     // Write the model as provided from proxy_config (with provider prefix).
-    // Codex sends this model name to the proxy, and find_profile() uses the
-    // prefix for explicit provider routing (e.g. "deepseek/deepseek-v4-flash").
     table.insert("model".into(), toml::Value::String(default_model.to_string()));
 
     // Preserve sandbox_mode from original config
@@ -355,32 +362,34 @@ fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &st
         .find(|l| l.trim().starts_with("sandbox_mode"))
         .and_then(|l| l.trim().split('=').nth(1).map(|s| s.trim().trim_matches('"').to_string()))
         .unwrap_or_else(|| "danger-full-access".to_string());
+
+    // Use custom provider "ironlink" instead of built-in "openai".
+    // This tells Codex to treat IronLink as a custom provider so all
+    // API requests (including GET /v1/models) route through the proxy,
+    // and the models list populates the chat model dropdown.
     table.insert("model_provider".into(), toml::Value::String("ironlink".into()));
     table.insert("model_reasoning_effort".into(), toml::Value::String(reasoning_effort.to_string()));
     table.insert("sandbox_mode".into(), toml::Value::String(sandbox_mode.clone()));
 
-    // Remove stale shell_environment_policy (written by old ccswitch tool)
-    table.remove("shell_environment_policy");
+    // Remove stale openai_base_url — base_url now lives in [model_providers.ironlink]
+    table.remove("openai_base_url");
 
-    // Set/overwrite [model_providers.ironlink] with models list from active relay profile.
-    // If no models from relay profile, try to preserve existing models from current config.
-    let mut active_models = read_active_profile_models();
-
-    // Fallback: if relay profile has no models, try to preserve existing models from config
-    if active_models.is_empty() {
-        if !existing_models.is_empty() {
-            active_models = existing_models;
-            tracing::info!("Falling back to existing models from config: {:?}", active_models);
-        }
-    }
-
+    // Set/overwrite [model_providers.ironlink] — Codex reads this as a custom provider
+    // definition. All requests (models, chat, responses) go to base_url.
     let ironlink = toml::Value::Table({
         let mut m = toml::value::Table::new();
-        m.insert("name".into(), toml::Value::String("ironlink".into()));
+        m.insert("name".into(), toml::Value::String("IronLink".into()));
         m.insert("wire_api".into(), toml::Value::String("responses".into()));
         m.insert("requires_openai_auth".into(), toml::Value::Boolean(false));
-        // m.insert("env_key".into(), toml::Value::String("OPENAI_API_KEY".into()));
         m.insert("base_url".into(), toml::Value::String(proxy_url.clone()));
+        if !active_models.is_empty() {
+            m.insert(
+                "models".into(),
+                toml::Value::Array(
+                    active_models.iter().map(|m| toml::Value::String(m.clone())).collect()
+                ),
+            );
+        }
         m
     });
     let mut mp = match table.remove("model_providers") {
@@ -389,6 +398,9 @@ fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &st
     };
     mp.insert("ironlink".into(), ironlink);
     table.insert("model_providers".into(), toml::Value::Table(mp));
+
+    // Remove stale shell_environment_policy (written by old ccswitch tool)
+    table.remove("shell_environment_policy");
 
     // Ensure [marketplaces.openai-bundled] has source_type = "local" but keep other keys
     let mut mkts = match table.remove("marketplaces") {

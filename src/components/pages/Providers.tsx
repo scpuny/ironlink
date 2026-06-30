@@ -512,7 +512,9 @@ export default function Providers() {
                             ? [...draft.modelList, m]
                             : draft.modelList.filter(x => x !== m);
                           setDraft(p => p ? { ...p, modelList: next, model: e.target.checked && !p.model ? m : p.model } : null);
-                        }} />
+                        }} >
+                          {m}
+                          </Checkbox>
                     </div>
                   ))}
                 </div>

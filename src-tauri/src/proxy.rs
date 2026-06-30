@@ -53,14 +53,18 @@ fn is_anthropic(base_url: &str) -> bool {
     base_url.contains("anthropic.com") || base_url.contains("api.claude.ai")
 }
 
-/// GET /v1/models — aggregate models from all enabled providers
+/// GET /v1/models — aggregate models from all enabled providers.
+/// Returns a proper ModelsResponse matching Codex's expected format,
+/// so Codex can display these models in its chat model dropdown.
 pub async fn handle_models(
     State(state): State<Arc<AppState>>,
-) -> axum::Json<serde_json::Value> {
+) -> axum::Json<ModelsResponse> {
+    tracing::info!("→ GET /v1/models called by Codex");
     let profiles = state.relay_profiles.lock().await;
-    let mut entries: Vec<serde_json::Value> = Vec::new();
+    let mut models: Vec<ModelInfo> = Vec::new();
 
     for p in profiles.iter().filter(|p| p.enabled) {
+        tracing::debug!("  profile: {} ({}) has {} models", p.name, p.provider_id, p.model_list.len());
         let mut seen = std::collections::HashSet::<String>::new();
         let all_models: Vec<&str> = p.model_list
             .iter()
@@ -72,69 +76,104 @@ pub async fn handle_models(
         for model_id in all_models {
             if !seen.insert(model_id.to_string()) { continue; }
 
-            // Bare model ID (e.g. "deepseek-chat")
-            entries.push(serde_json::json!({
-                "id": model_id.to_string(),
-                "object": "model",
-                "created": chrono::Utc::now().timestamp(),
-                "owned_by": "custom",
-                "metadata": {
-                    "provider_id": p.provider_id,
-                    "display_name": format!("{} — {}", p.name, model_id),
-                    "visibility": "list",
-                    "context_window": 128000,
-                    "supports_responses_api": true,
-                }
-            }));
+            let slug = format!("{}/{}", p.provider_id, model_id);
 
-            // Also emit a prefixed ID (e.g. "deepseek/deepseek-chat") so Codex can
-            // associate the model with the correct relay profile via model routing.
-            // This matches the `{provider_id}/{model}` format used in config.toml.
-            let prefixed_id = format!("{}/{}", p.provider_id, model_id);
-            if seen.insert(prefixed_id.clone()) {
-                entries.push(serde_json::json!({
-                    "id": prefixed_id,
-                    "object": "model",
-                    "created": chrono::Utc::now().timestamp(),
-                    "owned_by": "custom",
-                    "metadata": {
-                        "provider_id": p.provider_id,
-                        "display_name": format!("{} — {} ({})", p.name, model_id, prefixed_id),
-                        "visibility": "list",
-                        "context_window": 128000,
-                        "supports_responses_api": true,
-                    }
-                }));
-            }
+            models.push(ModelInfo {
+                slug: slug.clone(),
+                display_name: format!("{} — {}", p.name, model_id),
+                description: Some(format!("IronLink proxy via {}", p.name)),
+                default_reasoning_level: Some("medium".into()),
+                supported_reasoning_levels: vec![
+                    ReasoningEffortPreset {
+                        effort: "low".into(), description: "Low".into(),
+                        label: Some("Low".into()), level: Some("low".into()),
+                    },
+                    ReasoningEffortPreset {
+                        effort: "medium".into(), description: "Medium".into(),
+                        label: Some("Medium".into()), level: Some("medium".into()),
+                    },
+                    ReasoningEffortPreset {
+                        effort: "high".into(), description: "High".into(),
+                        label: Some("High".into()), level: Some("high".into()),
+                    },
+                ],
+                shell_type: "shell_command".into(),
+                visibility: "list".into(),
+                supported_in_api: true,
+                priority: 10,
+                additional_speed_tiers: vec![],
+                base_instructions: "You are a helpful assistant.".into(),
+                supports_reasoning_summaries: true,
+                default_reasoning_summary: "auto".into(),
+                support_verbosity: true,
+                default_verbosity: Some("low".into()),
+                web_search_tool_type: "text_and_image".into(),
+                truncation_policy: TruncationPolicyConfig {
+                    mode: "tokens".into(),
+                    limit: 10000,
+                },
+                supports_parallel_tool_calls: true,
+                supports_image_detail_original: true,
+                context_window: Some(128000),
+                max_context_window: Some(128000),
+                auto_compact_token_limit: Some(65536),
+                effective_context_window_percent: 95,
+                experimental_supported_tools: vec![],
+                input_modalities: vec!["text".into()],
+                supports_search_tool: true,
+                use_responses_lite: false,
+                apply_patch_tool_type: Some("freeform".into()),
+                auto_review_model_override: None,
+            });
         }
     }
 
     // Also include any models manually configured via the legacy ModelList page
     {
         let legacy_models = state.models.lock().await;
-        let mut legacy_seen = std::collections::HashSet::new();
+        let mut seen = std::collections::HashSet::new();
         for m in legacy_models.iter() {
-            if !legacy_seen.insert(&m.id) { continue; }
-            entries.push(serde_json::json!({
-                "id": m.id,
-                "object": "model",
-                "created": m.created,
-                "owned_by": "custom",
-                "metadata": {
-                    "provider_id": m.owned_by,
-                    "display_name": format!("Custom — {}", m.id),
-                    "visibility": "list",
-                    "context_window": 128000,
-                    "supports_responses_api": true,
-                }
-            }));
+            if !seen.insert(&m.id) { continue; }
+            models.push(ModelInfo {
+                slug: m.id.clone(),
+                display_name: format!("Custom — {}", m.id),
+                description: Some("Custom model".into()),
+                default_reasoning_level: Some("medium".into()),
+                supported_reasoning_levels: vec![],
+                shell_type: "shell_command".into(),
+                visibility: "list".into(),
+                supported_in_api: true,
+                priority: 0,
+                additional_speed_tiers: vec![],
+                base_instructions: "You are a helpful assistant.".into(),
+                supports_reasoning_summaries: false,
+                default_reasoning_summary: "auto".into(),
+                support_verbosity: false,
+                default_verbosity: None,
+                web_search_tool_type: "text_and_image".into(),
+                truncation_policy: TruncationPolicyConfig {
+                    mode: "tokens".into(),
+                    limit: 10000,
+                },
+                supports_parallel_tool_calls: false,
+                supports_image_detail_original: false,
+                context_window: None,
+                max_context_window: None,
+                auto_compact_token_limit: None,
+                effective_context_window_percent: 90,
+                experimental_supported_tools: vec![],
+                input_modalities: vec!["text".into()],
+                supports_search_tool: false,
+                use_responses_lite: false,
+                apply_patch_tool_type: None,
+                auto_review_model_override: None,
+            });
         }
     }
 
-    axum::Json(serde_json::json!({
-        "object": "list",
-        "data": entries,
-    }))
+    let response = ModelsResponse { models };
+    tracing::info!("← GET /v1/models returning {} models", response.models.len());
+    axum::Json(response)
 }
 
 /// Catch-all: proxy /v1/*path, routing to the correct provider based on model
@@ -145,6 +184,9 @@ pub async fn handle_proxy(
     _headers: HeaderMap,
     body: Bytes,
 ) -> Response<Body> {
+    // Log ALL incoming requests for debugging
+    tracing::info!("→ {} /v1/{} ({} bytes body)", method, path, body.len());
+
     // Check if proxy is enabled
     if !*state.proxy_enabled.lock().await {
         crate::config::push_log(&state, "✗ proxy disabled".into()).await;
