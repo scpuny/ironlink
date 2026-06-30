@@ -65,12 +65,15 @@ pub async fn handle_models(
 
     for p in profiles.iter().filter(|p| p.enabled) {
         let mut seen = std::collections::HashSet::new();
-        let models = std::iter::once(p.model.as_str())
-            .chain(p.model_list.lines().map(|l| l.trim()))
+        // Split model_list by newline first, then by space to handle messy entries
+        let all_models: Vec<&str> = p.model_list
+            .split(|c| c == '\n' || c == ',')
+            .flat_map(|line| line.split_whitespace())
+            .chain(std::iter::once(p.model.as_str()))
             .filter(|m| !m.is_empty())
-            .collect::<Vec<_>>();
+            .collect();
 
-        for model_id in models {
+        for model_id in all_models {
             if !seen.insert(model_id) { continue; }
             entries.push(serde_json::json!({
                 "id": format!("{}/{}", p.provider_id, model_id),
