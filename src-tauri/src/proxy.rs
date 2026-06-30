@@ -77,8 +77,11 @@ pub async fn handle_models(
                 "created": chrono::Utc::now().timestamp(),
                 "owned_by": p.provider_id,
                 "metadata": {
+                    "provider_id": p.provider_id,
                     "display_name": format!("{} — {}", p.name, model_id),
                     "visibility": "list",
+                    "context_window": 128000,
+                    "supports_responses_api": true,
                 }
             }));
         }
