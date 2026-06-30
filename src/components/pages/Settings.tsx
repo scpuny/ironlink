@@ -219,16 +219,7 @@ export default function Settings() {
         </Space>
       </Card>
 
-      {/* ── About ── */}
-      <Card className="hover-card" style={{ borderRadius: 12 }}>
-        <Title level={5} style={{ marginTop: 0 }}>{t('about')}</Title>
-        <Space orientation="vertical" style={{ width: '100%' }} size={4}>
-          <InfoRow label={t('app_name')} value="Codex Proxy" />
-          <InfoRow label={t('version')} value="v0.1.0" />
-          <InfoRow label={t('runtime')} value="Rust + Tauri" />
-          <InfoRow label={t('frontend')} value="React + Ant Design" />
-        </Space>
-      </Card>
+
     </Space>
   );
 }

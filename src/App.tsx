@@ -25,8 +25,8 @@ const navItems = [
   { key: 'Providers', icon: <ApiOutlined />, labelKey: 'providers' },
   { key: 'Config', icon: <FileTextOutlined />, labelKey: 'config' },
   { key: 'Auth', icon: <SafetyOutlined />, labelKey: 'auth' },
-  { key: 'About', icon: <InfoCircleOutlined />, labelKey: 'about' },
   { key: 'Settings', icon: <ToolOutlined />, labelKey: 'settings' },
+  { key: 'About', icon: <InfoCircleOutlined />, labelKey: 'about' },
 ];
 
 const pages: Record<string, React.FC> = {
