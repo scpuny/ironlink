@@ -1,0 +1,606 @@
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+
+/* ── Reset ── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  font-size: calc(14px * var(--font-scale, 1));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--bg-layout);
+  color: var(--text-primary);
+}
+
+#root {
+  font-size: calc(14px * var(--font-scale, 1));
+}
+
+/* Font family via data attribute */
+[data-font-family="yahei"] body,
+[data-font-family="yahei"] #root {
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+[data-font-family="pingfang"] body,
+[data-font-family="pingfang"] #root {
+  font-family: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+[data-font-family="noto"] body,
+[data-font-family="noto"] #root {
+  font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+[data-font-family="serif"] body,
+[data-font-family="serif"] #root {
+  font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+}
+
+body.light {
+  background: var(--bg-layout);
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-tertiary) 28%, transparent);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-tertiary) 48%, transparent);
+}
+
+/* ── Utility classes ── */
+
+/* Acrylic glass card */
+.acrylic-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s cubic-bezier(0.2, 0.72, 0.2, 1);
+}
+
+.acrylic-card:hover {
+  box-shadow: var(--shadow-hover);
+  border-color: var(--accent-border);
+}
+
+/* Ant Card hover */
+.hover-card {
+  transition: all 0.18s cubic-bezier(0.2, 0.72, 0.2, 1);
+}
+
+.hover-card:hover {
+  border-color: var(--accent-border) !important;
+  box-shadow: var(--shadow-hover);
+}
+
+/* Settings config row */
+.config-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: var(--config-row-bg);
+  border: 1px solid var(--border-subtler);
+}
+
+.config-row:hover {
+  background: var(--config-row-hover);
+}
+
+/* Info row (about page) */
+.info-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: var(--config-row-bg);
+}
+
+.info-row:hover {
+  background: var(--config-row-hover);
+}
+
+/* ── Selection ── */
+::selection {
+  background: var(--accent-bg);
+  color: inherit;
+}
+
+/* ── Focus ring ── */
+*:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+/* ── Monospace ── */
+code,
+pre,
+.mono {
+  font-family: "SF Mono", "Fira Code", Consolas, "Noto Sans Mono", monospace;
+}
+
+/* ── Animation ── */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.18s cubic-bezier(0.2, 0.72, 0.2, 1) both;
+}
+
+
+/* ── Provider / Relay layout (CodexPlusPlus inspired) ── */
+
+/* Preset selector */
+.preset-selector {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--card-bg);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  overflow: hidden;
+}
+
+.preset-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 16px;
+  height: 44px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  transition: background 0.15s ease;
+}
+
+.preset-toggle:hover {
+  background: var(--config-row-hover);
+}
+
+.preset-toggle-label {
+  font-weight: 500;
+}
+
+.preset-toggle-count {
+  margin-left: 8px;
+  font-size: 11px;
+  opacity: 0.5;
+  font-weight: 400;
+}
+
+.preset-toggle-arrow {
+  font-size: 12px;
+  opacity: 0.4;
+}
+
+.preset-grid {
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--border-subtler);
+}
+
+.preset-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--config-row-bg);
+}
+
+.preset-search:focus-within {
+  border-color: var(--accent-border);
+}
+
+.preset-search-icon {
+  opacity: 0.4;
+  font-size: 15px;
+}
+
+.preset-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.preset-empty {
+  text-align: center;
+  padding: 16px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.preset-category {
+  margin-bottom: 12px;
+}
+
+.preset-category-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+  padding-left: 4px;
+  font-weight: 500;
+}
+
+.preset-category-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Preset buttons */
+.preset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--config-row-bg);
+  color: inherit;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.preset-btn:hover {
+  border-color: var(--accent-border);
+  background: var(--config-row-hover);
+}
+
+.preset-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--accent-bg);
+  color: var(--accent-border);
+  font-weight: 700;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.preset-btn-model {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--config-row-bg);
+  color: var(--text-tertiary);
+  line-height: 16px;
+}
+
+/* Profile list */
+.relay-profile-list {
+  display: grid;
+  gap: 10px;
+}
+
+/* Profile card */
+.relay-profile-card {
+  display: grid;
+  grid-template-columns: 32px 32px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: inherit;
+  padding: 14px 16px;
+  text-align: left;
+  cursor: pointer;
+  min-height: 64px;
+  transition: all 0.18s cubic-bezier(0.2, 0.72, 0.2, 1);
+  user-select: none;
+}
+
+.relay-profile-card:hover,
+.relay-profile-card:focus-visible {
+  border-color: var(--accent-border) !important;
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.relay-profile-card.active {
+  border-color: color-mix(in srgb, var(--accent-border) 70%, transparent);
+  background: var(--accent-bg);
+}
+
+.relay-drag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 14px;
+  opacity: 0.3;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  border: none;
+  background: none;
+  padding: 0;
+  color: inherit;
+  touch-action: none;
+}
+
+.relay-drag:hover {
+  background-color: var(--accent-bg);
+}
+
+.relay-profile-card:hover .relay-drag {
+  opacity: 0.6;
+}
+
+.relay-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--config-row-bg);
+  color: var(--text-tertiary);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.relay-index.active {
+  background: var(--accent-bg);
+  color: var(--accent-border);
+}
+
+.relay-summary {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.relay-summary strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.relay-summary small {
+  overflow-wrap: anywhere;
+  color: var(--accent-border);
+  font-size: 12px;
+}
+
+.relay-card-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
+}
+
+.relay-profile-card:hover .relay-card-actions,
+.relay-profile-card:focus-within .relay-card-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.relay-card-extra {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* Relay detail / editor */
+.relay-detail-page {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--card-bg);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  overflow: hidden;
+}
+
+.relay-detail-sticky {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-subtler);
+  background: var(--card-bg);
+}
+
+.relay-detail-sticky .toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.relay-profile-editor {
+  padding: 16px;
+}
+
+.relay-editor-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.relay-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field span {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.field-hint {
+  margin: -4px 0 12px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.field-select {
+  width: 100%;
+  height: 36px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--config-row-bg);
+  color: inherit;
+  padding: 0 10px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.field-select:focus {
+  border-color: var(--accent-border);
+}
+
+/* Fix preset-btn hover border */
+.preset-btn:hover {
+  border-color: var(--accent-border) !important;
+}
+
+/* Fix relay-summary small color */
+.relay-summary small {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* Fix relay-index active bg */
+.relay-index.active {
+  background: var(--accent-bg);
+  color: var(--accent-border);
+}
+
+/* Fix preset-btn-icon bg */
+.preset-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--accent-bg);
+  color: var(--accent-border);
+  font-weight: 700;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* Fix Ant Input in relay editor */
+.relay-profile-editor input,
+.relay-profile-editor .ant-input-affix-wrapper {
+  background: var(--config-row-bg) !important;
+  border-color: var(--border-subtle) !important;
+  color: var(--text-primary) !important;
+}
+
+.relay-profile-editor input:focus,
+.relay-profile-editor .ant-input-affix-wrapper-focused {
+  border-color: var(--accent-border) !important;
+  box-shadow: 0 0 0 2px var(--accent-ring) !important;
+}
+
+/* ── CSS Variables (overridden by App.tsx) ── */
+:root {
+  --font-scale: 1;
+  --bg-layout: #0c0d10;
+  --text-primary: #f1f1ef;
+  --text-secondary: #a7a8ad;
+  --text-tertiary: #6c6e74;
+  --text-muted: rgba(255, 255, 255, 0.25);
+
+  --card-bg: rgba(255, 255, 255, 0.05);
+  --config-row-bg: rgba(255, 255, 255, 0.04);
+  --config-row-hover: rgba(255, 255, 255, 0.07);
+
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-subtler: rgba(255, 255, 255, 0.04);
+
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.15);
+  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.22);
+  --shadow-hover: 0 4px 20px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.32);
+  --shadow-accent: 0 0 12px rgba(255, 106, 61, 0.35);
+
+  --accent-border: rgba(255, 106, 61, 0.35);
+  --accent-bg: rgba(255, 106, 61, 0.25);
+  --accent-ring: rgba(255, 106, 61, 0.20);
+}
+
+/* Drag drop — @dnd-kit */
+.relay-profile-card.dragging {
+  opacity: 0.4;
+  box-shadow: var(--shadow-accent);
+}
+
+.relay-profile-card:has(.relay-drag:focus-visible) {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+}
