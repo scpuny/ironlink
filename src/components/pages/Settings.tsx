@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, Button, Typography, Space, Tag, Radio, Row, Col, Switch, message } from 'antd';
+import { Card, Button, Typography, Space,  Radio, Row, Col, Switch, message } from 'antd';
 import {
   MoonOutlined, SunOutlined, GlobalOutlined, CheckOutlined,
   ThunderboltOutlined, DesktopOutlined,
@@ -224,16 +224,3 @@ export default function Settings() {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', borderRadius: 6,
-      background: 'rgba(0,0,0,0.12)',
-    }}>
-      <Text type="secondary" style={{ fontSize: 13, minWidth: 80 }}>{label}</Text>
-      <Text code style={{ fontSize: 12 }}>{value}</Text>
-      <div style={{ flex: 1 }} />
-      <Tag style={{ fontSize: 10, opacity: 0.6 }}>info</Tag>
-    </div>
-  );
-}

@@ -68,3 +68,7 @@ export function useAuth() {
 export function useProfiles() {
   return useAsync(() => api.fetchProfiles());
 }
+
+export function useProxyConfig() {
+  return useAsync(() => api.fetchProxyConfig());
+}

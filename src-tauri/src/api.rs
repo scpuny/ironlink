@@ -75,7 +75,8 @@ pub async fn toggle_proxy_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ToggleBody>,
 ) -> Json<bool> {
-    let result = config::toggle_proxy(body.enabled);
+    let pcfg = state.proxy_config.lock().await.clone();
+    let result = config::toggle_proxy(body.enabled, &pcfg.default_model, &pcfg.reasoning_effort);
     *state.proxy_enabled.lock().await = body.enabled;
     Json(result)
 }

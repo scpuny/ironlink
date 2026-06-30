@@ -44,6 +44,7 @@ pub struct AppState {
     pub models: Mutex<Vec<ModelEntry>>,
     pub relay_profiles: Mutex<Vec<RelayProfile>>,
     pub active_relay_id: Mutex<String>,
+    pub proxy_config: Mutex<ProxyConfig>,
 }
 
 impl AppState {
@@ -90,6 +91,7 @@ impl AppState {
             }]),
             relay_profiles: Mutex::new(profiles),
             active_relay_id: Mutex::new(active_id),
+            proxy_config: Mutex::new(ProxyConfig::default()),
         })
     }
 }
@@ -172,7 +174,7 @@ fn restore_codex_configs() -> anyhow::Result<()> {
 }
 
 /// Enable/disable proxy by replacing base_url in Codex config.toml
-pub fn toggle_proxy(enable: bool) -> bool {
+pub fn toggle_proxy(enable: bool, default_model: &str, reasoning_effort: &str) -> bool {
     if enable {
         // Backup originals first
         if let Err(e) = backup_codex_configs() {
@@ -184,20 +186,35 @@ pub fn toggle_proxy(enable: bool) -> bool {
         let proxy_url = format!("http://127.0.0.1:{}/v1", PROXY_PORT);
 
         if !content.contains(&proxy_url) {
-            if let Err(e) = write_proxy_config(&content) {
+            if let Err(e) = write_proxy_config(&content, default_model, reasoning_effort) {
                 warn!("Failed to write proxy config: {e}");
                 return false;
             }
             info!("Proxy enabled — config.toml written with all required sections");
         }
 
-        // Apply IronLink's auth to Codex auth.json
+        // Merge IronLink's auth into Codex auth.json (preserve other fields)
         let ironlink_auth = read_auth();
         if !ironlink_auth.is_empty() {
-            if let Err(e) = write_codex_auth(&ironlink_auth) {
+            let codex_auth_str = read_codex_auth();
+            let merged = if let Ok(mut codex_val) = serde_json::from_str::<serde_json::Value>(&codex_auth_str) {
+                if let Ok(ironlink_val) = serde_json::from_str::<serde_json::Value>(&ironlink_auth) {
+                    if let Some(obj) = codex_val.as_object_mut() {
+                        if let Some(ironlink_obj) = ironlink_val.as_object() {
+                            for (k, v) in ironlink_obj {
+                                obj.insert(k.clone(), v.clone());
+                            }
+                        }
+                    }
+                }
+                serde_json::to_string_pretty(&codex_val).unwrap_or(ironlink_auth)
+            } else {
+                ironlink_auth
+            };
+            if let Err(e) = write_codex_auth(&merged) {
                 warn!("Failed to apply IronLink auth to Codex: {e}");
             } else {
-                info!("IronLink auth applied to ~/.codex/auth.json");
+                info!("IronLink auth merged into ~/.codex/auth.json");
             }
         }
         true
@@ -319,12 +336,17 @@ pub fn write_auth(content: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Write a complete proxy-ready config.toml preserving the user's model choice.
-/// Called after backup, so original is safe to restore from.
-fn write_proxy_config(original: &str) -> anyhow::Result<()> {
+/// Modify only the proxy-related fields in Codex config.toml, preserving everything else.
+/// Parse original → update specific keys → serialize back.
+fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &str) -> anyhow::Result<()> {
     let proxy_url = format!("http://127.0.0.1:{}/v1", PROXY_PORT);
 
-    // Preserve user's model choice from original
+    // Parse original TOML, or start empty
+    let mut root: toml::Value = original.parse::<toml::Value>().unwrap_or(toml::Value::Table(toml::value::Table::new()));
+
+    let table = root.as_table_mut().unwrap();
+
+    // Preserve user's model from original
     let user_model = original.lines()
         .find(|l| l.trim().starts_with("model =") && !l.trim().starts_with("model_"))
         .and_then(|l| {
@@ -336,37 +358,66 @@ fn write_proxy_config(original: &str) -> anyhow::Result<()> {
         .unwrap_or("deepseek-v4-flash-free")
         .to_string();
 
-    // Preserve sandbox_mode if set
+    // Preserve sandbox_mode from original
     let sandbox_mode = original.lines()
         .find(|l| l.trim().starts_with("sandbox_mode"))
         .and_then(|l| l.trim().split('=').nth(1).map(|s| s.trim().trim_matches('"').to_string()))
         .unwrap_or_else(|| "danger-full-access".to_string());
 
-    let config = format!(
-        r#"model = "{model}"
-model_provider = "custom"
-model_reasoning_effort = "medium"
-sandbox_mode = "{sandbox}"
+    // Modify only the fields we need — leave everything else intact
+    // Use user's original model if available, otherwise fall back to default_model param
+    let effective_model = if user_model.is_empty() || user_model == "deepseek-v4-flash-free" {
+        default_model
+    } else {
+        &user_model
+    };
+    table.insert("model".into(), toml::Value::String(effective_model.to_string()));
+    table.insert("model_provider".into(), toml::Value::String("custom".into()));
+    table.insert("model_reasoning_effort".into(), toml::Value::String(reasoning_effort.to_string()));
+    table.insert("sandbox_mode".into(), toml::Value::String(sandbox_mode.clone()));
 
-[model_providers.custom]
-name = "IronLink 代理中转"
-wire_api = "responses"
-requires_openai_auth = true
-base_url = "{proxy_url}"
+    // Set/overwrite [model_providers.custom]
+    let custom = toml::Value::Table({
+        let mut m = toml::value::Table::new();
+        m.insert("name".into(), toml::Value::String("IronLink Proxy".into()));
+        m.insert("wire_api".into(), toml::Value::String("responses".into()));
+        m.insert("requires_openai_auth".into(), toml::Value::Boolean(true));
+        m.insert("base_url".into(), toml::Value::String(proxy_url.clone()));
+        m
+    });
+    let mut mp = match table.remove("model_providers") {
+        Some(toml::Value::Table(t)) => t,
+        _ => toml::value::Table::new(),
+    };
+    mp.insert("custom".into(), custom);
+    table.insert("model_providers".into(), toml::Value::Table(mp));
 
-[marketplaces.openai-bundled]
-source_type = "local"
-"#,
-        model = user_model,
-        sandbox = sandbox_mode,
-        proxy_url = proxy_url
-    );
+    // Ensure [marketplaces.openai-bundled] has source_type = "local" but keep other keys
+    let mut mkts = match table.remove("marketplaces") {
+        Some(toml::Value::Table(t)) => t,
+        _ => toml::value::Table::new(),
+    };
+    let bundled = match mkts.remove("openai-bundled") {
+        Some(toml::Value::Table(t)) => t,
+        _ => toml::value::Table::new(),
+    };
+    let mut updated = bundled.clone();
+    updated.insert("source_type".into(), toml::Value::String("local".into()));
+    // Preserve other bundled keys like last_updated, source
+    for (k, v) in bundled {
+        if k != "source_type" {
+            updated.entry(k).or_insert(v);
+        }
+    }
+    mkts.insert("openai-bundled".into(), toml::Value::Table(updated));
+    table.insert("marketplaces".into(), toml::Value::Table(mkts));
 
+    let config = toml::to_string_pretty(&root)?;
     let path = codex_config_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(&path, &config)?;
-    info!("proxy config.toml written (model={}, sandbox={})", user_model, sandbox_mode);
+    info!("proxy config.toml written — modified only proxy fields, preserved all original sections");
     Ok(())
 }

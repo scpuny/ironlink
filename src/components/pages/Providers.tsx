@@ -26,10 +26,11 @@ import { CSS } from '@dnd-kit/utilities';
 
 import { PRESETS } from '../../presets';
 import type { ProviderPreset } from '../../presets';
-import { useProfiles } from '../../hooks/useApi';
+import { useProfiles, useProxyConfig } from '../../hooks/useApi';
 import { useI18n } from '../../i18n';
-import { saveProfiles, fetchUpstreamModels } from '../../api';
+import { saveProfiles, fetchUpstreamModels, setProxyConfig } from '../../api';
 import type { RelayProfileData } from '../../api';
+import type { ProxyConfig } from '../../types';
 
 const { Text } = Typography;
 
@@ -95,7 +96,9 @@ function createProfileFromPreset(preset: ProviderPreset): RelayProfile {
 
 export default function Providers() {
   const { data: profilesData, refetch: refetchProfiles } = useProfiles();
+  const { data: proxyCfg, refetch: refetchProxyCfg } = useProxyConfig();
   const [profiles, setProfiles] = useState<RelayProfile[]>([]);
+  const [proxyDraft, setProxyDraft] = useState<ProxyConfig | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -114,6 +117,10 @@ export default function Providers() {
       }
     }
   }, [profilesData]);
+
+  useEffect(() => {
+    if (proxyCfg) setProxyDraft(proxyCfg);
+  }, [proxyCfg]);
 
   // Sync draft when editing a profile
   useEffect(() => {
@@ -306,6 +313,64 @@ export default function Providers() {
               </div>
             </SortableContext>
           </DndContext>
+        </Card>
+
+        {/* Proxy Config Card */}
+        <Card style={{ borderRadius: 12 }} className="hover-card">
+          <Text strong style={{ fontSize: 14 }}>Codex 代理配置</Text>
+          <Text type="secondary" style={{ display: 'block', fontSize: 11, marginBottom: 16 }}>
+            配置启用代理时写入 Codex 的 model、model_provider、model_reasoning_effort 等字段
+          </Text>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div>
+              <Text style={{ fontSize: 12, display: 'block', marginBottom: 4, color: 'var(--text-secondary)' }}>model（默认模型）</Text>
+              <Select
+                value={proxyDraft?.default_model || undefined}
+                onChange={v => setProxyDraft(p => p ? { ...p, default_model: v || '' } : null)}
+                placeholder={t('select_model_placeholder')}
+                style={{ width: '100%' }}
+                allowClear
+                options={(function() {
+                  const seen = new Set<string>();
+                  const result: { value: string; label: string }[] = [];
+                  for (const p of profiles) {
+                    if (!p.enabled) continue;
+                    const add = (v: string) => {
+                      if (!seen.has(v)) { seen.add(v); result.push({ value: v, label: v }); }
+                    };
+                    if (p.model) add(p.providerId + '/' + p.model);
+                    p.modelList.split('\\n').filter(Boolean).forEach(m => add(p.providerId + '/' + m));
+                  }
+                  return result;
+                })()}
+              />
+            </div>
+            <div>
+              <Text style={{ fontSize: 12, display: 'block', marginBottom: 4, color: 'var(--text-secondary)' }}>model_reasoning_effort</Text>
+              <Select
+                value={proxyDraft?.reasoning_effort || 'medium'}
+                onChange={v => setProxyDraft(p => p ? { ...p, reasoning_effort: v } : null)}
+                style={{ width: 200 }}
+                options={[
+                  { value: 'low', label: 'low' },
+                  { value: 'medium', label: 'medium' },
+                  { value: 'high', label: 'high' },
+                ]}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Button
+                type="primary"
+                size="small"
+                icon={<SaveOutlined />}
+                onClick={() => {
+                  if (proxyDraft) {
+                    setProxyConfig(proxyDraft).then(refetchProxyCfg).catch(() => antMsg.error(t('save_failed')));
+                  }
+                }}
+              >{t('save')}</Button>
+            </div>
+          </div>
         </Card>
       </div>
     );

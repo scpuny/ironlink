@@ -61,6 +61,21 @@ pub struct ProxyStatus {
     pub port: u16,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProxyConfig {
+    pub default_model: String,
+    pub reasoning_effort: String,
+}
+
+impl Default for ProxyConfig {
+    fn default() -> Self {
+        Self {
+            default_model: "deepseek-v4-flash-free".into(),
+            reasoning_effort: "medium".into(),
+        }
+    }
+}
+
 // ── OpenAI Responses API types ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

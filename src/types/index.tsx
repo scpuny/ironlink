@@ -35,6 +35,11 @@ export interface ProxyStatus {
   port: number;
 }
 
+export interface ProxyConfig {
+  default_model: string;
+  reasoning_effort: string;
+}
+
 export interface ApiResponse<T> {
   ok: boolean;
   data?: T;

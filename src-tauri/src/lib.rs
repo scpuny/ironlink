@@ -93,7 +93,8 @@ pub fn run() {
             commands::save_profiles,
             commands::activate_profile,
             commands::fetch_upstream_models,
-            
+            commands::get_proxy_config,
+            commands::set_proxy_config,            
         ])
         .setup(move |_app| {
             // Start proxy server (management API + proxy forwarding)

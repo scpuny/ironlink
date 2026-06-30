@@ -125,6 +125,16 @@ export function activateProfile(id: string): Promise<void> {
   return tauriInvoke<void>('activate_profile', { id });
 }
 
+// ── Proxy Config ──
+
+export function fetchProxyConfig(): Promise<import("../types").ProxyConfig> {
+  return tauriInvoke<import("../types").ProxyConfig>('get_proxy_config');
+}
+
+export function setProxyConfig(config: import("../types").ProxyConfig): Promise<void> {
+  return tauriInvoke<void>('set_proxy_config', { config });
+}
+
 export function fetchUpstreamModels(url: string, apiKey: string): Promise<string[]> {
   return tauriInvoke<string[]>('fetch_upstream_models', { url, apiKey }).catch(e => {
     throw new Error(typeof e === 'string' ? e : e?.message || String(e));

@@ -48,7 +48,8 @@ pub async fn update_models(state: State<'_, Arc<AppState>>, models: Vec<ModelEnt
 
 #[tauri::command]
 pub async fn toggle_proxy(state: State<'_, Arc<AppState>>, enabled: bool) -> Result<bool, String> {
-    let result = config::toggle_proxy(enabled);
+    let pcfg = state.proxy_config.lock().await.clone();
+    let result = config::toggle_proxy(enabled, &pcfg.default_model, &pcfg.reasoning_effort);
     *state.proxy_enabled.lock().await = enabled;
     Ok(result)
 }
@@ -215,4 +216,17 @@ pub async fn fetch_upstream_models(url: String, api_key: String) -> Result<Vec<S
         .unwrap_or_default();
 
     Ok(models)
+}
+
+// ── Proxy Config ──
+
+#[tauri::command]
+pub async fn get_proxy_config(state: State<'_, Arc<AppState>>) -> Result<ProxyConfig, String> {
+    Ok(state.proxy_config.lock().await.clone())
+}
+
+#[tauri::command]
+pub async fn set_proxy_config(state: State<'_, Arc<AppState>>, config: ProxyConfig) -> Result<(), String> {
+    *state.proxy_config.lock().await = config;
+    Ok(())
 }
