@@ -135,6 +135,24 @@ pub async fn handle_proxy(
     };
     drop(profiles);
 
+    // Strip providerId/ prefix from model field before forwarding to upstream
+    let body_val = if let Some(obj) = body_val.as_object() {
+        if let Some(model_val) = obj.get("model").and_then(|v| v.as_str()) {
+            if let Some(slash) = model_val.find('/') {
+                let stripped = model_val[slash + 1..].to_string();
+                let mut new_obj = obj.clone();
+                new_obj.insert("model".into(), serde_json::Value::String(stripped));
+                serde_json::Value::Object(new_obj)
+            } else {
+                body_val
+            }
+        } else {
+            body_val
+        }
+    } else {
+        body_val
+    };
+
     let url = profile_url(&base_url, &path, &protocol);
 
     let client = reqwest::Client::builder()

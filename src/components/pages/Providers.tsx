@@ -317,13 +317,13 @@ export default function Providers() {
 
         {/* Proxy Config Card */}
         <Card style={{ borderRadius: 12 }} className="hover-card">
-          <Text strong style={{ fontSize: 14 }}>Codex 代理配置</Text>
+          <Text strong style={{ fontSize: 14 }}>{t('proxy_config_title')}</Text>
           <Text type="secondary" style={{ display: 'block', fontSize: 11, marginBottom: 16 }}>
-            配置启用代理时写入 Codex 的 model、model_provider、model_reasoning_effort 等字段
+            {t('proxy_config_desc')}
           </Text>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div>
-              <Text style={{ fontSize: 12, display: 'block', marginBottom: 4, color: 'var(--text-secondary)' }}>model（默认模型）</Text>
+              <Text style={{ fontSize: 12, display: 'block', marginBottom: 4, color: 'var(--text-secondary)' }}>{t('model_label')}</Text>
               <Select
                 value={proxyDraft?.default_model || undefined}
                 onChange={v => setProxyDraft(p => p ? { ...p, default_model: v || '' } : null)}
@@ -333,20 +333,33 @@ export default function Providers() {
                 options={(function() {
                   const seen = new Set<string>();
                   const result: { value: string; label: string }[] = [];
+                  const isTextModel = (name: string) =>
+                    !/video|image|vision|tts|whisper|embed|realtime|audio|img|dalle/i.test(name);
                   for (const p of profiles) {
                     if (!p.enabled) continue;
                     const add = (v: string) => {
-                      if (!seen.has(v)) { seen.add(v); result.push({ value: v, label: v }); }
+                      if (!v || !isTextModel(v)) return;
+                      const key = p.providerId + '/' + v;
+                      if (!seen.has(key)) { seen.add(key); result.push({ value: key, label: key }); }
                     };
-                    if (p.model) add(p.providerId + '/' + p.model);
-                    p.modelList.split('\\n').filter(Boolean).forEach(m => add(p.providerId + '/' + m));
+                    // Split by newline then by space to handle messy model_list entries
+                    p.modelList.split(/[\n,]/).filter(Boolean).forEach(line => {
+                      line.split(/\s+/).filter(Boolean).forEach(m => add(m.trim()));
+                    });
+                  }
+                  // Also add provider.model as first option
+                  for (const p of profiles) {
+                    if (p.enabled && p.model && isTextModel(p.model)) {
+                      const key = p.providerId + '/' + p.model;
+                      if (!seen.has(key)) { seen.add(key); result.unshift({ value: key, label: key }); }
+                    }
                   }
                   return result;
                 })()}
               />
             </div>
             <div>
-              <Text style={{ fontSize: 12, display: 'block', marginBottom: 4, color: 'var(--text-secondary)' }}>model_reasoning_effort</Text>
+              <Text style={{ fontSize: 12, display: 'block', marginBottom: 4, color: 'var(--text-secondary)' }}>{t('model_reasoning_effort')}</Text>
               <Select
                 value={proxyDraft?.reasoning_effort || 'medium'}
                 onChange={v => setProxyDraft(p => p ? { ...p, reasoning_effort: v } : null)}
