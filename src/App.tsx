@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { ConfigProvider, theme, Layout, Menu, Typography, Button, Space } from 'antd';
+import { ConfigProvider, theme, Layout, Menu, Typography, Button, Space, Modal } from 'antd';
 import {
   DashboardOutlined, FileTextOutlined,
-  BarsOutlined, ToolOutlined, SunOutlined, MoonOutlined, TranslationOutlined,
-  GithubOutlined, ApiOutlined, SafetyOutlined,
+  ToolOutlined, SunOutlined, MoonOutlined, TranslationOutlined,
+  GithubOutlined, ApiOutlined, SafetyOutlined, BarsOutlined, InfoCircleOutlined,
 } from '@ant-design/icons';
 import { I18nProvider, useI18n } from './i18n';
 import { AppearanceProvider, useAppearance } from './appearance/store';
@@ -14,9 +14,10 @@ import Providers from './components/pages/Providers';
 import ConfigEditor from './components/pages/ConfigEditor';
 import LogViewer from './components/pages/LogViewer';
 import AuthPage from './components/pages/Auth';
+import AboutPage from './components/pages/About';
 import SettingsPanel from './components/pages/Settings';
 import { useStatus } from './hooks/useApi';
-
+import logoImg from './assets/logo.png';
 const { Sider, Content, Header } = Layout;
 
 const navItems = [
@@ -24,13 +25,13 @@ const navItems = [
   { key: 'Providers', icon: <ApiOutlined />, labelKey: 'providers' },
   { key: 'Config', icon: <FileTextOutlined />, labelKey: 'config' },
   { key: 'Auth', icon: <SafetyOutlined />, labelKey: 'auth' },
+  { key: 'About', icon: <InfoCircleOutlined />, labelKey: 'about' },
   { key: 'Settings', icon: <ToolOutlined />, labelKey: 'settings' },
-  { key: 'Logs', icon: <BarsOutlined />, labelKey: 'logs' },
 ];
 
 const pages: Record<string, React.FC> = {
   Providers: Providers,
-  Config: ConfigEditor, Logs: LogViewer, Auth: AuthPage, Settings: SettingsPanel,
+  Config: ConfigEditor, Auth: AuthPage, About: AboutPage, Settings: SettingsPanel,
 };
 
 function antdTokens(t: ThemeTokens, fontCss: string, baseSize: number) {
@@ -54,6 +55,7 @@ function antdTokens(t: ThemeTokens, fontCss: string, baseSize: number) {
 
 function AppInner() {
   const [page, setPage] = useState('Status');
+  const [logModalOpen, setLogModalOpen] = useState(false);
   const { data: status } = useStatus();
   const { t, lang, setLang } = useI18n();
   const { themeStyle, themeMode, setThemeMode, textSize, fontFamily } = useAppearance();
@@ -63,14 +65,20 @@ function AppInner() {
   } as Record<string, string>)[fontFamily];
   const baseFontSize = ({ small: 13, default: 14, large: 15, xlarge: 16 } as Record<string, number>)[textSize];
 
+  const resolveDark = () =>
+    themeMode === 'system' ? window.matchMedia('(prefers-color-scheme: dark)').matches : themeMode === 'dark';
+
+  const resolveThemeMode = (): 'dark' | 'light' =>
+    themeMode === 'system' ? (resolveDark() ? 'dark' : 'light') : themeMode;
+
   const toggleTheme = () => {
-    setThemeMode(themeMode === 'dark' ? 'light' : 'dark');
+    setThemeMode(themeMode === 'dark' ? 'light' : themeMode === 'light' ? 'system' : 'dark');
   };
 
   const PageComponent = pages[page] || StatusPanel;
-  const isDark = themeMode === 'dark';
+  const isDark = resolveDark();
   const tokens = STYLE_TOKENS[themeStyle] || STYLE_TOKENS[DEFAULT_STYLE];
-  const cur = tokens[themeMode];
+  const cur = tokens[resolveThemeMode()];
 
   useEffect(() => {
     const root = document.documentElement;
@@ -147,10 +155,11 @@ function AppInner() {
             <Space>
               <div style={{
                 width: 36, height: 36, borderRadius: 8,
-                background: `linear-gradient(135deg, ${cur.colorPrimary}, ${cur.colorPrimaryHover})`,
                 display: 'grid', placeItems: 'center',
-                fontWeight: 700, fontSize: 15, color: '#1a0f0a',
-              }}>C</div>
+                overflow: 'hidden',
+              }}>
+                <img src={logoImg} alt="IronLink" style={{ width: 36, height: 36, objectFit: 'contain', borderRadius: 8 }} />
+              </div>
               <div>
                 <Typography.Text strong style={{ fontSize: 14, lineHeight: 1.2, display: 'block', color: isDark ? tokens.dark.colorText : tokens.light.colorText }}>
                   IronLink
@@ -216,6 +225,14 @@ function AppInner() {
             )}
             <div style={{ flex: 1 }} />
             <Button type="text" size="small"
+              disabled={!status?.enabled}
+              onClick={() => setLogModalOpen(true)}
+              icon={<BarsOutlined />}
+              style={{ color: isDark ? tokens.dark.colorTextTertiary : tokens.light.colorTextTertiary, fontSize: 13 }}
+            >
+              {t('logs')}
+            </Button>
+            <Button type="text" size="small"
               onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
               icon={<TranslationOutlined />}
               style={{ color: isDark ? tokens.dark.colorTextTertiary : tokens.light.colorTextTertiary, fontSize: 13 }}
@@ -228,6 +245,18 @@ function AppInner() {
               style={{ color: isDark ? tokens.dark.colorTextTertiary : tokens.light.colorTextTertiary, fontSize: 13 }}
             />
           </Header>
+          <Modal
+            title={t('proxy_logs')}
+            open={logModalOpen}
+            onCancel={() => setLogModalOpen(false)}
+            footer={null}
+            width={800}
+            styles={{ body: { padding: 0 } }}
+          >
+            <div style={{ maxHeight: '60vh', overflow: 'hidden' }}>
+              <LogViewer />
+            </div>
+          </Modal>
 
           <Content style={{ padding: 24, overflowY: 'auto' }}>
             <div style={{ maxWidth: 1400, margin: '0 auto', width: '100%' }}>

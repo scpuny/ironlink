@@ -92,9 +92,12 @@ pub fn run() {
             commands::get_profiles,
             commands::save_profiles,
             commands::activate_profile,
+            commands::fetch_upstream_models,
+            
         ])
         .setup(move |_app| {
-            // Start proxy inside Tauri's tokio runtime
+            // Start proxy server (management API + proxy forwarding)
+            // Only forwards traffic when proxy_enabled is set to true
             start_proxy(state);
             info!("Tauri UI started");
             Ok(())

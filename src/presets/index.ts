@@ -9,7 +9,7 @@
 
 export type PresetCategory = "official" | "aggregator" | "third_party" | "cn_official";
 
-export type RelayProtocol = "responses" | "chatCompletions";
+export type RelayProtocol = "responses" | "chatCompletions" | "anthropic";
 
 export interface ProviderPreset {
   id: string;
@@ -257,6 +257,19 @@ export const PRESETS: ProviderPreset[] = [
     protocol: "responses",
     model: "gpt-5.5",
     websiteUrl: "https://www.ccsub.net",
+  },
+
+  // ── Anthropic ──
+  {
+    id: "anthropic",
+    name: "Anthropic (Claude)",
+    websiteUrl: "https://console.anthropic.com",
+    apiKeyUrl: "https://console.anthropic.com/settings/keys",
+    category: "official",
+    baseUrl: "https://api.anthropic.com/v1",
+    protocol: "anthropic",
+    model: "claude-sonnet-4-20250514",
+    modelList: ["claude-sonnet-4-20250514", "claude-4-sonnet-20250407", "claude-4-opus-20250514", "claude-3-5-haiku-20241022"],
   },
 
   // ── 第三方 ──

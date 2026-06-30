@@ -10,10 +10,10 @@ interface Props {
 }
 
 const categoryLabels: Record<string, string> = {
-  official: 'Official',
-  cn_official: 'China Official',
-  aggregator: 'Aggregator',
-  third_party: 'Third Party',
+  official: 'cat_official',
+  cn_official: 'cat_cn_official',
+  aggregator: 'cat_aggregator',
+  third_party: 'cat_third_party',
 };
 
 function mapProtocol(preset: ProviderPreset): BackendConfig['type'] {
@@ -107,7 +107,7 @@ export default function ProviderSelector({ onSelect }: Props) {
                   key: cat,
                   label: (
                     <Typography.Text style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                      {categoryLabels[cat] || cat} ({items.length})
+                      {t(categoryLabels[cat] || cat)} ({items.length})
                     </Typography.Text>
                   ),
                   children: (

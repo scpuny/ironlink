@@ -2,17 +2,18 @@ import { useState, useEffect } from 'react';
 import { Card, Button, Input, Space, Typography, Spin, Tag, Tooltip, Popconfirm, Row, Col, theme } from 'antd';
 import { PlusOutlined, SaveOutlined, DeleteOutlined, EditOutlined, CheckCircleFilled } from '@ant-design/icons';
 import { useModels } from '../../hooks/useApi';
+import { useI18n } from '../../i18n';
 import { updateModels } from '../../api';
 import type { ModelEntry } from '../../types';
-import { useI18n } from '../../i18n';
 
 export default function ModelList() {
+  const { t } = useI18n();
   const { data, loading, refetch } = useModels();
   const [models, setModels] = useState<ModelEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const { t } = useI18n();
+
 
   useEffect(() => {
     if (data) setModels(data);
@@ -108,6 +109,7 @@ function ModelCard({
   onDelete: () => void;
   onStopEdit: () => void;
 }) {
+  const { t } = useI18n();
   const { token } = theme.useToken();
   return (
     <Card
@@ -118,14 +120,14 @@ function ModelCard({
         border: editing ? '1px solid ' + token.colorPrimary + '66' : undefined,
       }}
       actions={[
-        <Tooltip title="编辑" key="edit">
+        <Tooltip title={t('edit')} key="edit">
           {editing
-            ? <Button type="link" size="small" onClick={onStopEdit}>完成</Button>
+            ? <Button type="link" size="small" onClick={onStopEdit}>{t('done')}</Button>
             : <Button type="text" size="small" icon={<EditOutlined />} onClick={onStartEdit} />
           }
         </Tooltip>,
-        <Tooltip title="删除" key="delete">
-          <Popconfirm title="确认删除?" onConfirm={onDelete}>
+        <Tooltip title={t('delete')} key="delete">
+          <Popconfirm title={t('confirm_delete')} onConfirm={onDelete}>
             <Button type="text" size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Tooltip>,
@@ -134,7 +136,7 @@ function ModelCard({
       {editing ? (
         <Space orientation="vertical" size="small" style={{ width: '100%' }}>
           <div>
-            <Typography.Text type="secondary" style={{ fontSize: 11 }}>Model ID</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>{t('model_id')}</Typography.Text>
             <Input
               size="small"
               value={model.id}
@@ -144,7 +146,7 @@ function ModelCard({
             />
           </div>
           <div>
-            <Typography.Text type="secondary" style={{ fontSize: 11 }}>{'供应商'}</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>{t('owned_by')}</Typography.Text>
             <Input
               size="small"
               value={model.owned_by}
@@ -156,7 +158,7 @@ function ModelCard({
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>{model.object}</Tag>
             <Typography.Text style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-              created: {model.created}
+              {t('created')}: {model.created}
             </Typography.Text>
           </div>
         </Space>
@@ -172,7 +174,7 @@ function ModelCard({
             {model.owned_by || 'custom'}
           </Typography.Text>
           <div style={{ marginTop: 4 }}>
-            <Tag color="green" style={{ fontSize: 10, lineHeight: '18px' }}>active</Tag>
+            <Tag color="green" style={{ fontSize: 10, lineHeight: '18px' }}>{t('active')}</Tag>
           </div>
         </Space>
       )}

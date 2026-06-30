@@ -25,7 +25,7 @@ export default function BackendConfig() {
       message.success(t('saved'));
       await refetch();
     } catch (err: any) {
-      message.error(err?.message || 'Save failed');
+      message.error(err?.message || t('save_failed_msg'));
     } finally {
       setSaving(false);
     }
@@ -64,7 +64,7 @@ export default function BackendConfig() {
             items={[
               {
                 key: 'basic',
-                label: 'Basic',
+                label: t('basic'),
                 children: (
                   <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -92,9 +92,9 @@ export default function BackendConfig() {
                       </Form.Item>
                       <Form.Item label={<span style={{ fontSize: 13 }}>{t('auth_type')}</span>} name="auth_type">
                         <Select>
-                          <Select.Option value="bearer">Bearer Token</Select.Option>
-                          <Select.Option value="x-api-key">x-api-key (Anthropic)</Select.Option>
-                          <Select.Option value="none">None</Select.Option>
+                          <Select.Option value="bearer">{t('bearer_token')}</Select.Option>
+                          <Select.Option value="x-api-key">{t('x_api_key')}</Select.Option>
+                          <Select.Option value="none">{t('none')}</Select.Option>
                         </Select>
                       </Form.Item>
                     </div>
@@ -103,19 +103,19 @@ export default function BackendConfig() {
               },
               {
                 key: 'advanced',
-                label: 'Advanced',
+                label: t('advanced'),
                 children: (
                   <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                       <Form.Item label={<span style={{ fontSize: 13 }}>{t('test_model')}</span>} name="test_model">
                         <Input placeholder={t('test_model_placeholder')} />
                       </Form.Item>
-                      <Form.Item label="User-Agent" name="user_agent">
-                        <Input placeholder="codex-proxy/0.1.0" />
+                      <Form.Item label={t('user_agent')} name="user_agent">
+                        <Input placeholder={t('user_agent_placeholder')} />
                       </Form.Item>
                     </div>
                     <Form.Item label={<span style={{ fontSize: 13 }}>{t('custom_headers')}</span>} name="custom_headers">
-                      <Input.TextArea rows={3} placeholder='{"X-Custom-Header": "value"}' style={{ fontFamily: 'monospace', fontSize: 12 }} />
+                      <Input.TextArea rows={3} placeholder={t('headers_placeholder')} style={{ fontFamily: 'monospace', fontSize: 12 }} />
                     </Form.Item>
                     <Form.Item label={<span style={{ fontSize: 13 }}>{t('config_contents')}</span>} name="config_contents">
                       <Input.TextArea rows={5} placeholder={t('config_contents_placeholder')}

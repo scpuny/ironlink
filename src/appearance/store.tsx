@@ -9,7 +9,7 @@ const THEME_KEY = 'codex-proxy-theme';
 
 export type TextSize = 'small' | 'default' | 'large' | 'xlarge';
 export type FontChoice = 'system' | 'yahei' | 'pingfang' | 'noto' | 'serif';
-export type ThemeMode = 'dark' | 'light';
+export type ThemeMode = 'dark' | 'light' | 'system';
 
 export interface AppearanceCtx {
   themeStyle: ThemeStyle;
@@ -67,10 +67,22 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     document.documentElement.setAttribute('data-font-family', fontFamily);
   }, [fontFamily]);
 
+  const [systemDark, setSystemDark] = useState(() =>
+    window.matchMedia('(prefers-color-scheme: dark)').matches
+  );
+
   useEffect(() => {
-    document.documentElement.className = themeMode === 'light' ? 'light' : '';
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  useEffect(() => {
+    const isDark = themeMode === 'system' ? systemDark : themeMode === 'dark';
+    document.documentElement.className = isDark ? '' : 'light';
     localStorage.setItem(THEME_KEY, themeMode);
-  }, [themeMode]);
+  }, [themeMode, systemDark]);
 
   const setThemeStyle = useCallback((s: ThemeStyle) => setThemeStyleRaw(s), []);
   const setTextSize = useCallback((s: TextSize) => setTextSizeRaw(s), []);

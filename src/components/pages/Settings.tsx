@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, Button, Typography, Space, Tag, Radio, Row, Col, Switch, message } from 'antd';
 import {
   MoonOutlined, SunOutlined, GlobalOutlined, CheckOutlined,
-  ThunderboltOutlined,
+  ThunderboltOutlined, DesktopOutlined,
 } from '@ant-design/icons';
 import { useI18n } from '../../i18n';
 import { useAppearance } from '../../appearance/store';
@@ -22,13 +22,7 @@ const STYLE_SWATCHES: Record<ThemeStyle, { bg: string; surface: string; accent: 
   amber: { bg: '#0e0c08', surface: '#1a1610', accent: '#e8a040' },
 };
 
-const TEXT_SIZE_LABELS: Record<TextSize, string> = {
-  small: '小', default: '中', large: '大', xlarge: '特大',
-};
 
-const FONT_LABELS: Record<FontChoice, string> = {
-  system: '系统默认', yahei: '微软雅黑', pingfang: '苹方', noto: 'Noto Sans', serif: '衬线体',
-};
 
 export default function Settings() {
   const { t, lang, setLang } = useI18n();
@@ -49,7 +43,7 @@ export default function Settings() {
         await toggleProxy(true);
       }
     } catch {
-      message.error('设置失败');
+      message.error(t('settings_failed'));
     } finally {
       setTogglingAuto(false);
     }
@@ -59,14 +53,14 @@ export default function Settings() {
     <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
       {/* ── Appearance ── */}
       <Card className="hover-card" style={{ borderRadius: 12 }}>
-        <Title level={5} style={{ marginTop: 0, marginBottom: 20 }}>外观</Title>
+        <Title level={5} style={{ marginTop: 0, marginBottom: 20 }}>{t('appearance')}</Title>
 
         <Space orientation="vertical" size="large" style={{ width: '100%' }}>
 
           {/* Theme Style */}
           <div>
-            <Text strong style={{ fontSize: 14, display: 'block', marginBottom: 4 }}>主题风格</Text>
-            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>选择配色方向，同时支持深色/浅色模式</Text>
+            <Text strong style={{ fontSize: 14, display: 'block', marginBottom: 4 }}>{t('theme_style')}</Text>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>{t('theme_style_desc')}</Text>
 
             <Row gutter={[16, 16]}>
               {THEME_STYLES_META.map((meta) => {
@@ -129,8 +123,8 @@ export default function Settings() {
               <Space>
                 <GlobalOutlined style={{ fontSize: 18 }} />
                 <div>
-                  <Text style={{ fontSize: 14, fontWeight: 500 }}>主题模式</Text>
-                  <div><Text type="secondary" style={{ fontSize: 12 }}>选择深色或浅色模式</Text></div>
+                  <Text style={{ fontSize: 14, fontWeight: 500 }}>{t('theme_mode')}</Text>
+                  <div><Text type="secondary" style={{ fontSize: 12 }}>{t('theme_mode_desc')}</Text></div>
                 </div>
               </Space>
               <Radio.Group
@@ -139,8 +133,9 @@ export default function Settings() {
                 optionType="button"
                 buttonStyle="solid"
               >
-                <Radio.Button value="dark"><MoonOutlined /> 深色</Radio.Button>
-                <Radio.Button value="light"><SunOutlined /> 浅色</Radio.Button>
+                <Radio.Button value="system"><DesktopOutlined /> {t('follow_system')}</Radio.Button>
+                <Radio.Button value="dark"><MoonOutlined /> {t('dark_mode')}</Radio.Button>
+                <Radio.Button value="light"><SunOutlined /> {t('light_mode')}</Radio.Button>
               </Radio.Group>
             </div>
           </Space>
@@ -151,8 +146,8 @@ export default function Settings() {
               <Space>
                 <GlobalOutlined style={{ fontSize: 18 }} />
                 <div>
-                  <Text style={{ fontSize: 14, fontWeight: 500 }}>字号</Text>
-                  <div><Text type="secondary" style={{ fontSize: 12 }}>控制界面文字大小</Text></div>
+                  <Text style={{ fontSize: 14, fontWeight: 500 }}>{t('text_size')}</Text>
+                  <div><Text type="secondary" style={{ fontSize: 12 }}>{t('text_size_desc')}</Text></div>
                 </div>
               </Space>
               <Radio.Group
@@ -161,9 +156,10 @@ export default function Settings() {
                 optionType="button"
                 buttonStyle="solid"
               >
-                {(['small', 'default', 'large', 'xlarge'] as TextSize[]).map(s => (
-                  <Radio.Button key={s} value={s}>{TEXT_SIZE_LABELS[s]}</Radio.Button>
-                ))}
+                {(['small', 'default', 'large', 'xlarge'] as TextSize[]).map(s => {
+                  const labels: Record<string, string> = { small: t('text_size_small'), default: t('text_size_default'), large: t('text_size_large'), xlarge: t('text_size_xlarge') };
+                  return <Radio.Button key={s} value={s}>{labels[s]}</Radio.Button>;
+                })}
               </Radio.Group>
             </div>
           </Space>
@@ -174,8 +170,8 @@ export default function Settings() {
               <Space>
                 <GlobalOutlined style={{ fontSize: 18 }} />
                 <div>
-                  <Text style={{ fontSize: 14, fontWeight: 500 }}>字体</Text>
-                  <div><Text type="secondary" style={{ fontSize: 12 }}>选择界面显示字体</Text></div>
+                  <Text style={{ fontSize: 14, fontWeight: 500 }}>{t('font_family')}</Text>
+                  <div><Text type="secondary" style={{ fontSize: 12 }}>{t('font_family_desc')}</Text></div>
                 </div>
               </Space>
               <Radio.Group
@@ -184,9 +180,10 @@ export default function Settings() {
                 optionType="button"
                 buttonStyle="solid"
               >
-                {(['system', 'yahei', 'pingfang', 'noto', 'serif'] as FontChoice[]).map(s => (
-                  <Radio.Button key={s} value={s}>{FONT_LABELS[s]}</Radio.Button>
-                ))}
+                {(['system', 'yahei', 'pingfang', 'noto', 'serif'] as FontChoice[]).map(s => {
+                  const labels: Record<string, string> = { system: t('font_system'), yahei: t('font_yahei'), pingfang: t('font_pingfang'), noto: t('font_noto'), serif: t('font_serif') };
+                  return <Radio.Button key={s} value={s}>{labels[s]}</Radio.Button>;
+                })}
               </Radio.Group>
             </div>
           </Space>
@@ -201,8 +198,8 @@ export default function Settings() {
             <Space>
               <ThunderboltOutlined style={{ fontSize: 18 }} />
               <div>
-                <Text style={{ fontSize: 14, fontWeight: 500 }}>自动启动代理</Text>
-                <div><Text type="secondary" style={{ fontSize: 12 }}>启动 IronLink 时自动启用代理</Text></div>
+                <Text style={{ fontSize: 14, fontWeight: 500 }}>{t('auto_start')}</Text>
+                <div><Text type="secondary" style={{ fontSize: 12 }}>{t('auto_start_desc')}</Text></div>
               </div>
             </Space>
             <Switch checked={autoStart} onChange={handleAutoStartToggle} loading={togglingAuto} size="small" />
@@ -227,8 +224,8 @@ export default function Settings() {
         <Title level={5} style={{ marginTop: 0 }}>{t('about')}</Title>
         <Space orientation="vertical" style={{ width: '100%' }} size={4}>
           <InfoRow label={t('app_name')} value="Codex Proxy" />
-          <InfoRow label="Version" value="v0.1.0" />
-          <InfoRow label="Runtime" value="Rust + Tauri" />
+          <InfoRow label={t('version')} value="v0.1.0" />
+          <InfoRow label={t('runtime')} value="Rust + Tauri" />
           <InfoRow label={t('frontend')} value="React + Ant Design" />
         </Space>
       </Card>

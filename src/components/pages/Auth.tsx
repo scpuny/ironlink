@@ -6,6 +6,7 @@ import {
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/useApi';
 import { writeAuthFile } from '../../api';
+import { useI18n } from '../../i18n';
 
 const { Text, Title } = Typography;
 
@@ -27,14 +28,14 @@ interface Plan {
   features: PlanFeature[];
 }
 
-const PLANS: Plan[] = [
+const planDefs = (t: (k: string, p?: Record<string, string | number>) => string): Plan[] => [
   {
     id: 'free',
     name: 'Free',
     icon: <SafetyOutlined />,
     color: '#6b7280',
     badgeColor: '#4b5563',
-    description: '免费基础版 — 安全沙箱，轻量体验',
+    description: t('plan_free'),
     json: {
       access_token: 'fake-free-token',
       expires_at: 2099000000,
@@ -46,13 +47,13 @@ const PLANS: Plan[] = [
       },
     },
     features: [
-      { label: '安全沙箱', included: true },
-      { label: '代码图谱精简版', included: true },
-      { label: '自动化浏览器', included: false },
-      { label: 'MCP 服务', included: false },
-      { label: '电脑操控（Computer Use）', included: false },
-      { label: '智能体记忆', included: false },
-      { label: '百万上下文', included: false },
+      { label: t('feature_safe_sandbox'), included: true },
+      { label: t('feature_codegraph_lite'), included: true },
+      { label: t('feature_browser'), included: false },
+      { label: t('feature_mcp'), included: false },
+      { label: t('feature_computer_use'), included: false },
+      { label: t('feature_memory'), included: false },
+      { label: t('feature_1m_context'), included: false },
     ],
   },
   {
@@ -61,7 +62,7 @@ const PLANS: Plan[] = [
     icon: <StarOutlined />,
     color: "#22c55e",
     badgeColor: '#16a34a',
-    description: '个人会员版 — 基础执行 + 网页抓取',
+    description: t('plan_plus'),
     json: {
       access_token: 'fake-plus-token',
       expires_at: 2099000000,
@@ -79,13 +80,13 @@ const PLANS: Plan[] = [
       },
     },
     features: [
-      { label: '基础代码执行沙箱', included: true },
-      { label: '基础网页抓取', included: true },
-      { label: '基础 MCP 服务', included: true },
-      { label: '代码图谱精简版', included: true },
-      { label: '128K 上下文', included: true },
-      { label: '电脑操控（Computer Use）', included: false },
-      { label: '百万上下文', included: false },
+      { label: t('feature_basic_sandbox'), included: true },
+      { label: t('feature_basic_browser'), included: true },
+      { label: t('feature_basic_mcp'), included: true },
+      { label: t('feature_codegraph_lite'), included: true },
+      { label: t('feature_128k_context'), included: true },
+      { label: t('feature_computer_use'), included: false },
+      { label: t('feature_1m_context'), included: false },
     ],
   },
   {
@@ -94,7 +95,7 @@ const PLANS: Plan[] = [
     icon: <CrownOutlined />,
     color: '#f59e0b',
     badgeColor: '#d97706',
-    description: '高阶专业版 — 无限制沙箱，全自动化',
+    description: t('plan_pro'),
     json: {
       access_token: 'fake-pro-token',
       expires_at: 2099000000,
@@ -114,13 +115,13 @@ const PLANS: Plan[] = [
       },
     },
     features: [
-      { label: 'danger-full-access 无限制沙箱', included: true },
-      { label: '浏览器全自动化', included: true },
-      { label: '电脑操控（Computer Use）', included: true },
-      { label: '完整 MCP 服务', included: true },
-      { label: '完整代码图谱', included: true },
-      { label: '智能体记忆', included: true },
-      { label: '百万上下文（1M）', included: true },
+      { label: t('feature_full_sandbox'), included: true },
+      { label: t('feature_full_browser'), included: true },
+      { label: t('feature_computer_use'), included: true },
+      { label: t('feature_full_mcp'), included: true },
+      { label: t('feature_full_codegraph'), included: true },
+      { label: t('feature_full_memory'), included: true },
+      { label: t('feature_1m'), included: true },
     ],
   },
   {
@@ -129,7 +130,7 @@ const PLANS: Plan[] = [
     icon: <ThunderboltOutlined />,
     color: '#ef4444',
     badgeColor: '#dc2626',
-    description: '企业终极版 — 无限额度，无限制权限',
+    description: t('plan_enterprise'),
     json: {
       access_token: 'fake-enterprise-token',
       expires_at: 2099000000,
@@ -154,17 +155,17 @@ const PLANS: Plan[] = [
       },
     },
     features: [
-      { label: 'danger-full-access 无限制沙箱', included: true },
-      { label: '浏览器全自动化', included: true },
-      { label: '电脑操控（Computer Use）', included: true },
-      { label: '完整 MCP 服务', included: true },
-      { label: '完整代码图谱', included: true },
-      { label: '智能体记忆', included: true },
-      { label: '百万上下文（1M）', included: true },
-      { label: '多任务目标模式', included: true },
-      { label: '无限制文件上传', included: true },
-      { label: '插件白名单解除', included: true },
-      { label: '无限制 Shell 执行', included: true },
+      { label: t('feature_full_sandbox'), included: true },
+      { label: t('feature_full_browser'), included: true },
+      { label: t('feature_computer_use'), included: true },
+      { label: t('feature_full_mcp'), included: true },
+      { label: t('feature_full_codegraph'), included: true },
+      { label: t('feature_full_memory'), included: true },
+      { label: t('feature_1m'), included: true },
+      { label: t('feature_multi_agent'), included: true },
+      { label: t('feature_unlimited_upload'), included: true },
+      { label: t('feature_plugin_override'), included: true },
+      { label: t('feature_shell_unrestricted'), included: true },
     ],
   },
 ];
@@ -180,7 +181,7 @@ function detectActivePlan(content: string): string {
 
 export default function Auth() {
   const { token } = theme.useToken();
-  // const { t } = useI18n();
+  const { t } = useI18n();
   const { data: authContent, refetch } = useAuth();
   const [activePlan, setActivePlan] = useState<string>('unknown');
   const [applying, setApplying] = useState<string | null>(null);
@@ -194,10 +195,10 @@ export default function Auth() {
     try {
       await writeAuthFile(JSON.stringify(plan.json, null, 2));
       setActivePlan(plan.id);
-      message.success(`已切换至 ${plan.name} 版，启用代理后将自动应用。`);
+      message.success(t('switched_plan', { plan: plan.name }));
       await refetch();
     } catch (err: any) {
-      message.error(err?.message || '写入失败');
+      message.error(err?.message || t('write_failed'));
     } finally {
       setApplying(null);
     }
@@ -211,22 +212,22 @@ export default function Auth() {
           <Space>
             <SafetyOutlined style={{ fontSize: 22, color: token.colorSuccess }} />
             <div>
-              <Title level={5} style={{ margin: 0 }}>认证等级切换</Title>
+              <Title level={5} style={{ margin: 0 }}>{t('auth_title')}</Title>
               <Text type="secondary" style={{ fontSize: 13 }}>
-                切换认证等级后，启用代理时将自动写入 Codex 配置。
-                所有认证令牌均为模拟令牌，仅供本地测试使用。
+                {t('auth_desc').split('\\n')[0]}
+                {t('auth_desc').split('\\n')[1]}
               </Text>
             </div>
           </Space>
           <Tag color={activePlan === 'unknown' ? 'default' : 'green'} style={{ fontSize: 12 }}>
-            当前: {activePlan === 'unknown' ? '未检测' : activePlan.toUpperCase()}
+            {t('current_plan', { plan: activePlan === 'unknown' ? t('not_detected') : activePlan.toUpperCase() })}
           </Tag>
         </div>
       </Card>
 
       {/* Plan cards */}
       <Row gutter={[12, 12]}>
-        {PLANS.map(plan => (
+        {planDefs(t).map(plan => (
           <Col xs={24} sm={12} lg={6} key={plan.id}>
             <Card
               className="hover-card"
@@ -292,7 +293,7 @@ export default function Auth() {
                   background: activePlan !== plan.id ? plan.color : undefined,
                 }}
               >
-                {activePlan === plan.id ? '当前版本' : '切换至此版本'}
+                {activePlan === plan.id ? t('current_version') : t('switch_version')}
               </Button>
             </Card>
           </Col>
@@ -304,8 +305,8 @@ export default function Auth() {
         <Space>
           <ThunderboltOutlined style={{ color: "#22c55e", fontSize: 16 }} />
           <Text style={{ fontSize: 13 }}>
-            切换步骤：① 点击上方版本卡片 → ② 启用代理 → ③ 认证自动写入 ~/.codex/auth.json。
-            切换版本或关闭代理时将自动还原原始配置。
+            {t('auth_tip').split('\\n')[0]}
+            {t('auth_tip').split('\\n')[1]}
           </Text>
         </Space>
       </Card>

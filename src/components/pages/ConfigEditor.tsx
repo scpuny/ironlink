@@ -29,7 +29,7 @@ export default function ConfigEditor() {
 
   return (
     <Card className="hover-card" style={{ borderRadius: 12 }}
-      title={<span style={{ fontSize: 15, fontWeight: 600 }}>Codex 配置文件</span>}>
+      title={<span style={{ fontSize: 15, fontWeight: 600 }}>{t('codex_config_title')}</span>}>
       <Tabs
         items={[
           {

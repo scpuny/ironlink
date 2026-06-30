@@ -69,7 +69,7 @@ impl AppState {
         };
         let active_id = profiles.iter().find(|p| p.active).map(|p| p.id.clone()).unwrap_or_else(|| profiles[0].id.clone());
         Arc::new(Self {
-            proxy_enabled: Mutex::new(read_auto_start() && toggle_proxy(true)),
+            proxy_enabled: Mutex::new(false),  // Start disabled; user must click start
             backend: Mutex::new(BackendConfig {
                 backend_type: BackendType::OpenaiChat,
                 api_base: "https://api.deepseek.com/v1".into(),
@@ -180,16 +180,15 @@ pub fn toggle_proxy(enable: bool) -> bool {
             return false;
         }
         // Modify config.toml: set base_url to proxy port
-        let mut content = read_codex_config();
+        let content = read_codex_config();
         let proxy_url = format!("http://127.0.0.1:{}/v1", PROXY_PORT);
 
         if !content.contains(&proxy_url) {
-            content = replace_base_url_value(&content, &proxy_url);
-            if let Err(e) = std::fs::write(codex_config_path(), &content) {
+            if let Err(e) = write_proxy_config(&content) {
                 warn!("Failed to write proxy config: {e}");
                 return false;
             }
-            info!("Proxy enabled — config.toml updated to use port {}", PROXY_PORT);
+            info!("Proxy enabled — config.toml written with all required sections");
         }
 
         // Apply IronLink's auth to Codex auth.json
@@ -216,27 +215,6 @@ pub fn toggle_proxy(enable: bool) -> bool {
         }
     }
 }
-
-/// Replace the base_url value in config.toml content with the proxy URL.
-/// Handles both `base_url = "..."` and `api_base = "..."` formats.
-fn replace_base_url_value(content: &str, new_url: &str) -> String {
-    let mut result = String::new();
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("base_url") || trimmed.starts_with("api_base") {
-            if let Some(_eq) = line.rfind('=') {
-                let indent = &line[..line.len() - trimmed.len()];
-                result.push_str(&format!("{}base_url = \"{}\"\n", indent, new_url));
-
-                continue;
-            }
-        }
-        result.push_str(line);
-        result.push('\n');
-    }
-    result
-}
-
 /// Path to ~/.codex/config.toml
 fn codex_config_path() -> PathBuf {
     let home = std::env::var("HOME")
@@ -338,5 +316,57 @@ pub fn write_auth(content: &str) -> anyhow::Result<()> {
     }
     std::fs::write(&path, content)?;
     info!("auth.json written to {}", path.display());
+    Ok(())
+}
+
+/// Write a complete proxy-ready config.toml preserving the user's model choice.
+/// Called after backup, so original is safe to restore from.
+fn write_proxy_config(original: &str) -> anyhow::Result<()> {
+    let proxy_url = format!("http://127.0.0.1:{}/v1", PROXY_PORT);
+
+    // Preserve user's model choice from original
+    let user_model = original.lines()
+        .find(|l| l.trim().starts_with("model =") && !l.trim().starts_with("model_"))
+        .and_then(|l| {
+            let v = l.trim();
+            v.find('"').and_then(|start| {
+                v[start+1..].find('"').map(|end| &v[start+1..start+1+end])
+            })
+        })
+        .unwrap_or("deepseek-v4-flash-free")
+        .to_string();
+
+    // Preserve sandbox_mode if set
+    let sandbox_mode = original.lines()
+        .find(|l| l.trim().starts_with("sandbox_mode"))
+        .and_then(|l| l.trim().split('=').nth(1).map(|s| s.trim().trim_matches('"').to_string()))
+        .unwrap_or_else(|| "danger-full-access".to_string());
+
+    let config = format!(
+        r#"model = "{model}"
+model_provider = "custom"
+model_reasoning_effort = "medium"
+sandbox_mode = "{sandbox}"
+
+[model_providers.custom]
+name = "IronLink 代理中转"
+wire_api = "responses"
+requires_openai_auth = true
+base_url = "{proxy_url}"
+
+[marketplaces.openai-bundled]
+source_type = "local"
+"#,
+        model = user_model,
+        sandbox = sandbox_mode,
+        proxy_url = proxy_url
+    );
+
+    let path = codex_config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, &config)?;
+    info!("proxy config.toml written (model={}, sandbox={})", user_model, sandbox_mode);
     Ok(())
 }

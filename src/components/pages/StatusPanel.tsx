@@ -45,12 +45,12 @@ export default function StatusPanel() {
       await toggleProxy(!status.enabled);
       await refetch();
       if (!status.enabled) {
-        message.success('代理已启用，原始 Codex 配置已备份，认证配置已同步');
+        message.success(t('proxy_enabled_msg'));
       } else {
-        message.success('代理已关闭，原始 Codex 配置已还原');
+        message.success(t('proxy_disabled_msg'));
       }
     } catch {
-      message.error('操作失败');
+      message.error(t('operation_failed'));
     } finally {
       setToggling(false);
     }
@@ -166,7 +166,7 @@ export default function StatusPanel() {
         <Card className="hover-card" style={{ borderRadius: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <ApiOutlined style={{ fontSize: 16, color: 'var(--accent-border)' }} />
-            <Text strong style={{ fontSize: 14 }}>已启用供应商模型</Text>
+            <Text strong style={{ fontSize: 14 }}>{t('enabled_providers')}</Text>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {enabledProfiles.map(provider => (
@@ -193,24 +193,24 @@ export default function StatusPanel() {
       <Card className="hover-card" style={{ borderRadius: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
           <ApiOutlined style={{ fontSize: 16, color: 'var(--accent-border)' }} />
-          <Text strong style={{ fontSize: 14 }}>API 端点</Text>
+          <Text strong style={{ fontSize: 14 }}>{t('api_endpoints')}</Text>
         </div>
 
         <div style={{ display: 'grid', gap: 8 }}>
           <EndpointRow
             method="GET"
             path="/v1/models"
-            desc="获取所有已启用供应商的模型列表（聚合）"
+            desc={t('endpoint_models')}
           />
           <EndpointRow
             method="POST"
             path="/v1/chat/completions"
-            desc="Chat Completions — 标准 OpenAI 兼容接口"
+            desc={t('endpoint_chat')}
           />
           <EndpointRow
             method="POST"
             path="/v1/responses"
-            desc="Responses API — OpenAI 新版接口"
+            desc={t('endpoint_responses')}
           />
         </div>
 
@@ -218,12 +218,12 @@ export default function StatusPanel() {
           marginTop: 16, padding: '10px 14px', borderRadius: 8,
           background: token.colorFillTertiary, fontSize: 12, fontFamily: 'monospace',
         }}>
-          <div style={{ color: 'var(--text-secondary)', marginBottom: 4 }}># Codex 配置</div>
+          <div style={{ color: 'var(--text-secondary)', marginBottom: 4 }}>{t('codex_config_hint')}</div>
           base_url = &quot;<Typography.Text copyable style={{ fontSize: 12, fontFamily: 'monospace' }}>http://127.0.0.1:{status.port}/v1</Typography.Text>&quot;
         </div>
 
         <Typography.Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 8 }}>
-          启用代理时备份 Codex 原始配置、同步认证配置；关闭时自动还原
+          {t('backup_hint')}
         </Typography.Text>
       </Card>
     </Space>
