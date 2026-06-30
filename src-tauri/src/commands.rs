@@ -69,8 +69,8 @@ pub async fn write_config_file(content: String) -> Result<(), String> {
 // ── Logs ──
 
 #[tauri::command]
-pub async fn get_logs() -> Vec<String> {
-    vec!["Proxy server started.".into()]
+pub async fn get_logs(state: State<'_, Arc<AppState>>) -> Result<Vec<String>, String> {
+    Ok(state.log_buffer.lock().await.clone())
 }
 
 // ── Auth File ──

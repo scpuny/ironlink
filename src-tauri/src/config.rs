@@ -45,6 +45,7 @@ pub struct AppState {
     pub relay_profiles: Mutex<Vec<RelayProfile>>,
     pub active_relay_id: Mutex<String>,
     pub proxy_config: Mutex<ProxyConfig>,
+    pub log_buffer: Mutex<Vec<String>>,
 }
 
 impl AppState {
@@ -92,6 +93,7 @@ impl AppState {
             relay_profiles: Mutex::new(profiles),
             active_relay_id: Mutex::new(active_id),
             proxy_config: Mutex::new(ProxyConfig::default()),
+            log_buffer: Mutex::new(Vec::new()),
         })
     }
 }
@@ -270,6 +272,15 @@ pub fn write_codex_auth(content: &str) -> anyhow::Result<()> {
 }
 
 /// Path to ~/.codex/auth.json
+
+/// Add a log entry to the in-memory ring buffer (keeps last 500)
+pub fn push_log(state: &AppState, msg: String) {
+    let mut buf = state.log_buffer.blocking_lock();
+    buf.push(msg);
+    if buf.len() > 500 {
+        buf.remove(0);
+    }
+}
 
 fn auth_path() -> PathBuf {
     let home = std::env::var("HOME")

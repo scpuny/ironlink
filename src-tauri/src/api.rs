@@ -84,9 +84,10 @@ pub async fn toggle_proxy_handler(
 // ── GET /api/logs ──
 // For now, returns an empty log list. A future enhancement could use file-based logging.
 
-pub async fn get_logs() -> Json<Vec<String>> {
-    // ponytail: skip log persistence until UI actually needs historical logs
-    Json(vec!["Proxy server started.".into()])
+pub async fn get_logs(
+    State(state): State<Arc<AppState>>,
+) -> Json<Vec<String>> {
+    Json(state.log_buffer.lock().await.clone())
 }
 
 // ── GET /api/config ──

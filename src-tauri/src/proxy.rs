@@ -57,9 +57,6 @@ fn is_anthropic(base_url: &str) -> bool {
 pub async fn handle_models(
     State(state): State<Arc<AppState>>,
 ) -> axum::Json<serde_json::Value> {
-    if !*state.proxy_enabled.lock().await {
-        return axum::Json(serde_json::json!({"object": "list", "data": []}));
-    }
     let profiles = state.relay_profiles.lock().await;
     let mut entries: Vec<serde_json::Value> = Vec::new();
 
@@ -103,6 +100,8 @@ pub async fn handle_proxy(
 ) -> Response<Body> {
     // Check if proxy is enabled
     if !*state.proxy_enabled.lock().await {
+        crate::config::push_log(&state, "✗ proxy disabled".into());
+        tracing::warn!("Request rejected: proxy is disabled");
         return error_response(StatusCode::SERVICE_UNAVAILABLE, "Proxy is disabled".into());
     }
     // Parse model from request body, find matching provider
@@ -117,6 +116,10 @@ pub async fn handle_proxy(
     };
 
     let profile = find_profile(&profiles, &body_val);
+    if profile.is_none() {
+        crate::config::push_log(&state, format!("✗ no matching provider for {}", path));
+        tracing::warn!("No matching profile found for path={} body={}", path, String::from_utf8_lossy(&body).lines().next().unwrap_or(""));
+    }
 
     let (backend_type, base_url, api_key, protocol) = match profile {
         Some(p) => {
@@ -130,9 +133,8 @@ pub async fn handle_proxy(
             (bt, p.base_url.clone(), p.api_key.clone(), p.protocol.clone())
         }
         None => {
-            // Fall back to legacy backend
-            let b = state.backend.lock().await.clone();
-            (b.backend_type, b.api_base.clone(), b.api_key.clone(), String::new())
+            tracing::error!("No enabled provider matched request. Check providers are enabled and have valid API keys.");
+            return error_response(StatusCode::BAD_REQUEST, "No enabled provider matches this request. Enable a provider and ensure its API key is set.".into());
         }
     };
     drop(profiles);
@@ -201,6 +203,8 @@ pub async fn handle_proxy(
         req_builder = req_builder.body(transformed);
     }
 
+    tracing::info!("Forwarding {} {} -> {} (protocol={})", method, path, url, protocol);
+    crate::config::push_log(&state, format!("→ {} {} -> {} (proto={})", method, path, url, protocol));
     // Forward to backend
     let resp = match client.execute(req_builder.build().unwrap()).await {
         Ok(r) => r,
@@ -216,6 +220,9 @@ pub async fn handle_proxy(
 
     if !status.is_success() {
         let bytes = resp.bytes().await.unwrap_or_default();
+        let err_body = String::from_utf8_lossy(&bytes).chars().take(500).collect::<String>();
+        tracing::error!("Upstream returned {}: {} for url={}", status.as_u16(), err_body, url);
+        crate::config::push_log(&state, format!("✗ upstream {} {}", status.as_u16(), url));
         return Response::builder()
             .status(status)
             .header(header::CONTENT_TYPE, "application/json")
