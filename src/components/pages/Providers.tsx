@@ -417,8 +417,19 @@ export default function Providers() {
 
         <div style={{ minWidth: 600, width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Field label={t('field_provider_id')}>
+              <Input
+                value={draft?.providerId}
+                onChange={e => {
+                  const v = e.target.value.replace(/[^a-zA-Z0-9_-]/g, '');
+                  setDraft(p => p ? { ...p, providerId: v } : null);
+                }}
+                placeholder="deepseek"
+                style={{ fontFamily: 'monospace' }}
+              />
+            </Field>
             <Field label={t('field_name')}>
-              <Input value={draft?.name} onChange={e => setDraft(p => p ? { ...p, name: e.target.value, providerId: p.providerId || e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '-') } : null)} />
+              <Input value={draft?.name} onChange={e => setDraft(p => p ? { ...p, name: e.target.value } : null)} />
             </Field>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingTop: 24 }}>
               <Switch checked={draft?.enabled ?? true} size="small" onChange={v => setDraft(p => p ? { ...p, enabled: v } : null)} />
