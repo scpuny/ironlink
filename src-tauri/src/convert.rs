@@ -211,11 +211,26 @@ pub fn chat_to_responses_response(chat: &ChatResponse, model: &str) -> Responses
     let mut output = Vec::new();
     for choice in &chat.choices {
         let mut content = Vec::new();
+        // If the message has reasoning_content (e.g. DeepSeek thinking), emit it as a
+        // "thinking" content block BEFORE the output_text block — matching the SSE
+        // streaming order in sse.rs::SseTransformStream.
+        if let Some(ref thinking) = choice.message.reasoning_content {
+            if !thinking.is_empty() {
+                content.push(ResponsesOutputContent {
+                    content_type: "thinking".into(),
+                    text: None,
+                    thinking: Some(thinking.clone()),
+                });
+            }
+        }
         if let Some(text) = &choice.message.content {
-            content.push(ResponsesOutputContent {
-                content_type: "output_text".into(),
-                text: text.clone(),
-            });
+            if !text.is_empty() {
+                content.push(ResponsesOutputContent {
+                    content_type: "output_text".into(),
+                    text: Some(text.clone()),
+                    thinking: None,
+                });
+            }
         }
         output.push(ResponsesOutput {
             output_type: "message".into(),
@@ -271,7 +286,8 @@ pub fn anthropic_to_responses_response(anth: &AnthropicResponse, model: &str) ->
         if item.content_type == "text" {
             content.push(ResponsesOutputContent {
                 content_type: "output_text".into(),
-                text: item.text.clone(),
+                text: Some(item.text.clone()),
+                thinking: None,
             });
         }
     }

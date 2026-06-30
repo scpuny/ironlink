@@ -100,7 +100,10 @@ pub struct ResponsesRequest {
 pub struct ResponsesOutputContent {
     #[serde(rename = "type")]
     pub content_type: String,
-    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

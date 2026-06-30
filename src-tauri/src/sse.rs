@@ -111,11 +111,15 @@ fn output_item_added_event(item_id: &str) -> Bytes {
     Bytes::from(format!("data: {}\n\n", sse_data))
 }
 
-fn content_part_added_event() -> Bytes {
+fn content_part_added_event(content_type: &str) -> Bytes {
+    let content = match content_type {
+        "thinking" => serde_json::json!([{"type": "thinking", "thinking": ""}]),
+        _ => serde_json::json!([{"type": "output_text", "text": ""}]),
+    };
     let sse_data = serde_json::json!({
         "type": "response.content_part.added",
         "part_index": 0,
-        "content": [{"type": "output_text", "text": ""}]
+        "content": content,
     });
     Bytes::from(format!("data: {}\n\n", sse_data))
 }
@@ -142,20 +146,65 @@ fn output_text_done_event(item_id: &str, text: &str) -> Bytes {
     Bytes::from(format!("data: {}\n\n", sse_data))
 }
 
-fn output_item_done_event(item_id: &str, text: &str) -> Bytes {
+fn thinking_delta_event(item_id: &str, delta: &str) -> Bytes {
+    let sse_data = serde_json::json!({
+        "type": "response.thinking.delta",
+        "delta": delta,
+        "item_id": item_id,
+        "output_index": 0,
+        "content_index": 0,
+    });
+    Bytes::from(format!("data: {}\n\n", sse_data))
+}
+
+fn thinking_done_event(item_id: &str, thinking: &str) -> Bytes {
+    let sse_data = serde_json::json!({
+        "type": "response.thinking.done",
+        "item_id": item_id,
+        "output_index": 0,
+        "content_index": 0,
+        "thinking": thinking,
+    });
+    Bytes::from(format!("data: {}\n\n", sse_data))
+}
+
+fn output_item_done_event(item_id: &str, thinking: &str, text: &str) -> Bytes {
+    let mut content = Vec::new();
+    if !thinking.is_empty() {
+        content.push(serde_json::json!({"type": "thinking", "thinking": thinking}));
+    }
+    if !text.is_empty() {
+        content.push(serde_json::json!({"type": "output_text", "text": text}));
+    }
+    // If neither thinking nor text, still emit an empty output_text so the item is valid
+    if content.is_empty() {
+        content.push(serde_json::json!({"type": "output_text", "text": ""}));
+    }
+
     let sse_data = serde_json::json!({
         "type": "response.output_item.done",
         "item": {
             "id": item_id,
             "type": "message",
             "role": "assistant",
-            "content": [{"type": "output_text", "text": text}]
+            "content": content,
         }
     });
     Bytes::from(format!("data: {}\n\n", sse_data))
 }
 
-fn response_completed_event(response_id: &str, item_id: &str, model: &str, text: &str) -> Bytes {
+fn response_completed_event(response_id: &str, item_id: &str, model: &str, thinking: &str, text: &str) -> Bytes {
+    let mut content = Vec::new();
+    if !thinking.is_empty() {
+        content.push(serde_json::json!({"type": "thinking", "thinking": thinking}));
+    }
+    if !text.is_empty() {
+        content.push(serde_json::json!({"type": "output_text", "text": text}));
+    }
+    if content.is_empty() {
+        content.push(serde_json::json!({"type": "output_text", "text": ""}));
+    }
+
     let sse_data = serde_json::json!({
         "type": "response.completed",
         "response": {
@@ -166,7 +215,7 @@ fn response_completed_event(response_id: &str, item_id: &str, model: &str, text:
                 "id": item_id,
                 "type": "message",
                 "role": "assistant",
-                "content": [{"type": "output_text", "text": text}]
+                "content": content,
             }]
         }
     });
@@ -180,11 +229,17 @@ pub struct SseTransformStream<S> {
     parser: SseParser,
     is_chat: bool,
     pending: Vec<Bytes>,
-    /// Whether `response.created` has been emitted
+    /// Whether `response.created` + `output_item.added` have been emitted
     started: bool,
     /// Whether we've already emitted done/completed events
     ended: bool,
-    /// Accumulated text for final events
+    /// Whether we are currently streaming a thinking block
+    thinking_active: bool,
+    /// Whether we've started the output_text content part
+    output_text_active: bool,
+    /// Accumulated thinking text for final events
+    accumulated_thinking: String,
+    /// Accumulated output text for final events
     accumulated_text: String,
     item_id: String,
     response_id: String,
@@ -203,6 +258,9 @@ where
             pending: Vec::new(),
             started: false,
             ended: false,
+            thinking_active: false,
+            output_text_active: false,
+            accumulated_thinking: String::new(),
             accumulated_text: String::new(),
             item_id: gen_item_id(),
             response_id: gen_id(),
@@ -278,24 +336,47 @@ impl<S> SseTransformStream<S> {
             self.pending
                 .push(response_created_event(&self.response_id, &self.model));
             self.pending.push(output_item_added_event(&self.item_id));
-            self.pending.push(content_part_added_event());
+        }
+    }
+
+    fn close_thinking(&mut self) {
+        if self.thinking_active {
+            self.thinking_active = false;
+            self.pending.push(thinking_done_event(
+                &self.item_id,
+                &self.accumulated_thinking,
+            ));
         }
     }
 
     fn emit_end_events(&mut self) {
         self.ended = true;
-        self.pending.push(output_text_done_event(
-            &self.item_id,
-            &self.accumulated_text,
-        ));
+        // Close any open thinking block
+        if self.thinking_active {
+            self.pending.push(thinking_done_event(
+                &self.item_id,
+                &self.accumulated_thinking,
+            ));
+            self.thinking_active = false;
+        }
+        // Close output text if it was started
+        if self.output_text_active {
+            self.pending.push(output_text_done_event(
+                &self.item_id,
+                &self.accumulated_text,
+            ));
+        }
+        // Emit output_item.done and response.completed with both thinking and text
         self.pending.push(output_item_done_event(
             &self.item_id,
+            &self.accumulated_thinking,
             &self.accumulated_text,
         ));
         self.pending.push(response_completed_event(
             &self.response_id,
             &self.item_id,
             &self.model,
+            &self.accumulated_thinking,
             &self.accumulated_text,
         ));
     }
@@ -327,7 +408,7 @@ impl<S> SseTransformStream<S> {
 
         let delta = choice.and_then(|c| c.get("delta"));
 
-        // Extract reasoning_content (DeepSeek thinking) — treat as regular text delta
+        // Extract reasoning_content (DeepSeek thinking) — emit as thinking events
         let reasoning_text = delta
             .and_then(|d| d.get("reasoning_content"))
             .and_then(|v| v.as_str())
@@ -339,16 +420,33 @@ impl<S> SseTransformStream<S> {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        // Emit reasoning_content first, then content
+        // ── Handle thinking (reasoning_content) ──
         if !reasoning_text.is_empty() {
             self.ensure_started();
-            self.accumulated_text.push_str(reasoning_text);
+            // If this is the first thinking chunk, emit content_part.added for thinking
+            if !self.thinking_active {
+                // If output_text was already active (shouldn't happen normally, but handle it)
+                self.close_thinking();
+                self.pending.push(content_part_added_event("thinking"));
+                self.thinking_active = true;
+            }
+            self.accumulated_thinking.push_str(reasoning_text);
             self.pending
-                .push(output_text_delta_event(&self.item_id, reasoning_text));
+                .push(thinking_delta_event(&self.item_id, reasoning_text));
         }
 
+        // ── Handle regular content (output_text) ──
         if !content_text.is_empty() {
             self.ensure_started();
+            // If we were thinking, close the thinking block first
+            if self.thinking_active {
+                self.close_thinking();
+            }
+            // Start output_text content part if not already started
+            if !self.output_text_active {
+                self.pending.push(content_part_added_event("output_text"));
+                self.output_text_active = true;
+            }
             self.accumulated_text.push_str(content_text);
             self.pending
                 .push(output_text_delta_event(&self.item_id, content_text));
@@ -364,21 +462,20 @@ impl<S> SseTransformStream<S> {
 
         match event.event.as_str() {
             "message_start" => {
-                // Extract model from message_start
                 if self.model.is_empty() {
                     if let Some(m) = val.get("message").and_then(|m| m.get("model")).and_then(|v| v.as_str()) {
                         self.model = m.to_string();
                     }
                 }
-                // Extract existing content from the initial message
-                // Anthropic starts with an empty content array, so no delta needed
                 self.ensure_started();
             }
             "content_block_start" => {
-                // Ensure lifecycle events are emitted
                 self.ensure_started();
-                // Content block start — we already emitted output_item_added + content_part_added
-                // in ensure_started(). If there's initial text, treat it as a delta.
+                // Anthropic doesn't have separate thinking events, so treat as output_text
+                if !self.output_text_active {
+                    self.pending.push(content_part_added_event("output_text"));
+                    self.output_text_active = true;
+                }
                 if let Some(text) = val
                     .get("content_block")
                     .and_then(|b| b.get("text"))
@@ -393,6 +490,10 @@ impl<S> SseTransformStream<S> {
             }
             "content_block_delta" => {
                 self.ensure_started();
+                if !self.output_text_active {
+                    self.pending.push(content_part_added_event("output_text"));
+                    self.output_text_active = true;
+                }
                 if let Some(text) = val
                     .get("delta")
                     .and_then(|d| d.get("text"))
@@ -405,12 +506,8 @@ impl<S> SseTransformStream<S> {
                     }
                 }
             }
-            "content_block_stop" => {
-                // Nothing to emit here; we'll emit done on message_stop
-            }
-            "message_delta" => {
-                // Contains stop_reason and usage info
-            }
+            "content_block_stop" => {}
+            "message_delta" => {}
             "message_stop" => {
                 self.emit_end_events();
             }
@@ -418,3 +515,4 @@ impl<S> SseTransformStream<S> {
         }
     }
 }
+
