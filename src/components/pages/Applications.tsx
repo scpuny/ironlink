@@ -183,12 +183,33 @@ export default function Applications() {
                     </div>
                     <Space size={14} style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
                       <span>{t('default_model')}: <code style={{ fontSize: 10 }}>{app.default_model || '-'}</code></span>
-                      {mappingCount > 0 && <span>{mappingCount} {t('mappings_count', { count: mappingCount }).replace('{count} ', '')}</span>}
+                      {mappingCount > 0 && (
+                        <span style={{ cursor: 'pointer', color: 'var(--accent-border)' }}
+                          onClick={() => setMappingsDrawerApp(app)}>
+                          {mappingCount} {t('mappings_count', { count: mappingCount }).replace('{count} ', '')}
+                        </span>
+                      )}
                     </Space>
                   </div>
                 </Space>
                 <Switch checked={app.enabled} onChange={c => updateApp(app.id, { enabled: c })} size="small" />
               </div>
+
+              {/* Mapping tags */}
+              {mappingCount > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8, marginTop: 2 }}>
+                  {Object.entries(app.model_mappings).slice(0, 4).map(([codex, target]) => (
+                    <Tag key={codex} style={{ fontSize: 9, lineHeight: '18px', padding: '0 6px', borderRadius: 3, margin: 0 }}>
+                      {codex} <span style={{ opacity: 0.5 }}>→</span> {target.upstream_model}
+                    </Tag>
+                  ))}
+                  {mappingCount > 4 && (
+                    <Tag style={{ fontSize: 9, lineHeight: '18px', padding: '0 6px', borderRadius: 3, margin: 0 }}>
+                      +{mappingCount - 4}
+                    </Tag>
+                  )}
+                </div>
+              )}
 
               {/* Config summary bar */}
               <div style={{
@@ -271,6 +292,15 @@ export default function Applications() {
                   }
                 })}
                 placeholder="~/.codex/config.toml"
+              />
+            </div>
+
+            {/* Default model */}
+            <div className="drawer-field">
+              <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('default_model')}</Text>
+              <Select size="small" value={configDrawerApp.default_model} style={{ width: '100%' }}
+                onChange={v => updateApp(configDrawerApp.id, { default_model: v })}
+                options={CODEX_MODELS.map(m => ({ value: m, label: m }))}
               />
             </div>
 
