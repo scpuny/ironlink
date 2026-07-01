@@ -23,7 +23,6 @@ impl SseParser {
         Self { buffer: Vec::new() }
     }
 
-    /// Push new bytes, return any complete events found.
     pub fn push(&mut self, data: &[u8]) -> Vec<SseEvent> {
         self.buffer.extend_from_slice(data);
         let mut events = Vec::new();
@@ -93,6 +92,7 @@ fn response_created_event(response_id: &str, model: &str) -> Bytes {
             "object": "response",
             "model": model,
             "output": [],
+            "usage": null,
         }
     });
     Bytes::from(format!("data: {}\n\n", sse_data))
@@ -176,11 +176,9 @@ fn output_item_done_event(item_id: &str, thinking: &str, text: &str) -> Bytes {
     if !text.is_empty() {
         content.push(serde_json::json!({"type": "output_text", "text": text}));
     }
-    // If neither thinking nor text, still emit an empty output_text so the item is valid
     if content.is_empty() {
         content.push(serde_json::json!({"type": "output_text", "text": ""}));
     }
-
     let sse_data = serde_json::json!({
         "type": "response.output_item.done",
         "item": {
@@ -204,7 +202,6 @@ fn response_completed_event(response_id: &str, item_id: &str, model: &str, think
     if content.is_empty() {
         content.push(serde_json::json!({"type": "output_text", "text": ""}));
     }
-
     let sse_data = serde_json::json!({
         "type": "response.completed",
         "response": {
@@ -216,7 +213,12 @@ fn response_completed_event(response_id: &str, item_id: &str, model: &str, think
                 "type": "message",
                 "role": "assistant",
                 "content": content,
-            }]
+            }],
+            "usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0
+            }
         }
     });
     Bytes::from(format!("data: {}\n\n", sse_data))
@@ -229,17 +231,11 @@ pub struct SseTransformStream<S> {
     parser: SseParser,
     is_chat: bool,
     pending: Vec<Bytes>,
-    /// Whether `response.created` + `output_item.added` have been emitted
     started: bool,
-    /// Whether we've already emitted done/completed events
     ended: bool,
-    /// Whether we are currently streaming a thinking block
     thinking_active: bool,
-    /// Whether we've started the output_text content part
     output_text_active: bool,
-    /// Accumulated thinking text for final events
     accumulated_thinking: String,
-    /// Accumulated output text for final events
     accumulated_text: String,
     item_id: String,
     response_id: String,
@@ -276,12 +272,9 @@ where
     type Item = io::Result<Bytes>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // Drain pending events first
         if !self.pending.is_empty() {
             return Poll::Ready(Some(Ok(self.pending.remove(0))));
         }
-
-        // If we've already ended, return None
         if self.ended {
             return Poll::Ready(None);
         }
@@ -290,30 +283,24 @@ where
             match Pin::new(&mut self.inner).poll_next(cx) {
                 Poll::Ready(Some(Ok(chunk))) => {
                     let events = self.parser.push(&chunk);
-
                     for event in &events {
                         if self.is_chat {
-                            // Transform Chat Completions SSE → Responses SSE
                             self.transform_chat_event(event);
                         } else {
-                            // Transform Anthropic SSE → Responses SSE
                             self.transform_anthropic_event(event);
                         }
                     }
-
                     if !self.pending.is_empty() {
                         return Poll::Ready(Some(Ok(self.pending.remove(0))));
                     }
                 }
                 Poll::Ready(Some(Err(e))) => {
-                    // On error, emit completion events if we started
                     if self.started && !self.ended {
                         self.emit_end_events();
                     }
                     return Poll::Ready(Some(Err(e)));
                 }
                 Poll::Ready(None) => {
-                    // Stream ended naturally — emit completion events if we started
                     if self.started && !self.ended {
                         self.emit_end_events();
                         if !self.pending.is_empty() {
@@ -333,8 +320,7 @@ impl<S> SseTransformStream<S> {
     fn ensure_started(&mut self) {
         if !self.started {
             self.started = true;
-            self.pending
-                .push(response_created_event(&self.response_id, &self.model));
+            self.pending.push(response_created_event(&self.response_id, &self.model));
             self.pending.push(output_item_added_event(&self.item_id));
         }
     }
@@ -342,48 +328,24 @@ impl<S> SseTransformStream<S> {
     fn close_thinking(&mut self) {
         if self.thinking_active {
             self.thinking_active = false;
-            self.pending.push(thinking_done_event(
-                &self.item_id,
-                &self.accumulated_thinking,
-            ));
+            self.pending.push(thinking_done_event(&self.item_id, &self.accumulated_thinking));
         }
     }
 
     fn emit_end_events(&mut self) {
         self.ended = true;
-        // Close any open thinking block
         if self.thinking_active {
-            self.pending.push(thinking_done_event(
-                &self.item_id,
-                &self.accumulated_thinking,
-            ));
+            self.pending.push(thinking_done_event(&self.item_id, &self.accumulated_thinking));
             self.thinking_active = false;
         }
-        // Close output text if it was started
         if self.output_text_active {
-            self.pending.push(output_text_done_event(
-                &self.item_id,
-                &self.accumulated_text,
-            ));
+            self.pending.push(output_text_done_event(&self.item_id, &self.accumulated_text));
         }
-        // Emit output_item.done and response.completed with both thinking and text
-        self.pending.push(output_item_done_event(
-            &self.item_id,
-            &self.accumulated_thinking,
-            &self.accumulated_text,
-        ));
-        self.pending.push(response_completed_event(
-            &self.response_id,
-            &self.item_id,
-            &self.model,
-            &self.accumulated_thinking,
-            &self.accumulated_text,
-        ));
+        self.pending.push(output_item_done_event(&self.item_id, &self.accumulated_thinking, &self.accumulated_text));
+        self.pending.push(response_completed_event(&self.response_id, &self.item_id, &self.model, &self.accumulated_thinking, &self.accumulated_text));
     }
 
-    /// Transform a Chat Completions SSE event into Responses API events.
     fn transform_chat_event(&mut self, event: &SseEvent) {
-        // [DONE] signal — stream is complete
         if event.data == "[DONE]" {
             self.emit_end_events();
             return;
@@ -394,66 +356,57 @@ impl<S> SseTransformStream<S> {
             Err(_) => return,
         };
 
-        // Extract model name from first chunk
         if self.model.is_empty() {
             if let Some(m) = val.get("model").and_then(|v| v.as_str()) {
                 self.model = m.to_string();
             }
         }
 
-        let choice = val
-            .get("choices")
-            .and_then(|a| a.as_array())
-            .and_then(|a| a.first());
+        // Extract finish_reason from the choice — if present and non-null, the stream is ending
+        let choice = val.get("choices").and_then(|a| a.as_array()).and_then(|a| a.first());
+        let finish_reason = choice.and_then(|c| c.get("finish_reason")).and_then(|v| v.as_str());
 
         let delta = choice.and_then(|c| c.get("delta"));
 
-        // Extract reasoning_content (DeepSeek thinking) — emit as thinking events
-        let reasoning_text = delta
-            .and_then(|d| d.get("reasoning_content"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        // Extract regular content
-        let content_text = delta
-            .and_then(|d| d.get("content"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let reasoning_text = delta.and_then(|d| d.get("reasoning_content")).and_then(|v| v.as_str()).unwrap_or("");
+        let content_text = delta.and_then(|d| d.get("content")).and_then(|v| v.as_str()).unwrap_or("");
 
         // ── Handle thinking (reasoning_content) ──
         if !reasoning_text.is_empty() {
             self.ensure_started();
-            // If this is the first thinking chunk, emit content_part.added for thinking
             if !self.thinking_active {
-                // If output_text was already active (shouldn't happen normally, but handle it)
                 self.close_thinking();
                 self.pending.push(content_part_added_event("thinking"));
                 self.thinking_active = true;
             }
             self.accumulated_thinking.push_str(reasoning_text);
-            self.pending
-                .push(thinking_delta_event(&self.item_id, reasoning_text));
+            self.pending.push(thinking_delta_event(&self.item_id, reasoning_text));
         }
 
         // ── Handle regular content (output_text) ──
         if !content_text.is_empty() {
             self.ensure_started();
-            // If we were thinking, close the thinking block first
             if self.thinking_active {
                 self.close_thinking();
             }
-            // Start output_text content part if not already started
             if !self.output_text_active {
                 self.pending.push(content_part_added_event("output_text"));
                 self.output_text_active = true;
             }
             self.accumulated_text.push_str(content_text);
-            self.pending
-                .push(output_text_delta_event(&self.item_id, content_text));
+            self.pending.push(output_text_delta_event(&self.item_id, content_text));
+        }
+
+        // If finish_reason is present (non-null), emit end events
+        if let Some(reason) = finish_reason {
+            if !reason.is_empty() {
+                self.emit_end_events();
+            }
         }
     }
 
     /// Transform an Anthropic Messages SSE event into Responses API events.
+    /// Supports both text and thinking/reasoning content blocks.
     fn transform_anthropic_event(&mut self, event: &SseEvent) {
         let val: serde_json::Value = match serde_json::from_str(&event.data) {
             Ok(v) => v,
@@ -471,47 +424,83 @@ impl<S> SseTransformStream<S> {
             }
             "content_block_start" => {
                 self.ensure_started();
-                // Anthropic doesn't have separate thinking events, so treat as output_text
-                if !self.output_text_active {
-                    self.pending.push(content_part_added_event("output_text"));
-                    self.output_text_active = true;
-                }
-                if let Some(text) = val
-                    .get("content_block")
-                    .and_then(|b| b.get("text"))
-                    .and_then(|v| v.as_str())
-                {
-                    if !text.is_empty() {
-                        self.accumulated_text.push_str(text);
-                        self.pending
-                            .push(output_text_delta_event(&self.item_id, text));
+                let block_type = val.get("content_block").and_then(|b| b.get("type")).and_then(|v| v.as_str()).unwrap_or("text");
+                let text = val.get("content_block").and_then(|b| b.get("text")).and_then(|v| v.as_str()).unwrap_or("");
+
+                match block_type {
+                    "thinking" | "reasoning" | "thinking_delta" | "signature" => {
+                        if !self.thinking_active {
+                            self.close_thinking();
+                            self.pending.push(content_part_added_event("thinking"));
+                            self.thinking_active = true;
+                        }
+                        if !text.is_empty() {
+                            self.accumulated_thinking.push_str(text);
+                            self.pending.push(thinking_delta_event(&self.item_id, text));
+                        }
+                    }
+                    _ => {
+                        if !self.output_text_active {
+                            self.pending.push(content_part_added_event("output_text"));
+                            self.output_text_active = true;
+                        }
+                        if !text.is_empty() {
+                            self.accumulated_text.push_str(text);
+                            self.pending.push(output_text_delta_event(&self.item_id, text));
+                        }
                     }
                 }
             }
             "content_block_delta" => {
                 self.ensure_started();
-                if !self.output_text_active {
-                    self.pending.push(content_part_added_event("output_text"));
-                    self.output_text_active = true;
-                }
-                if let Some(text) = val
-                    .get("delta")
-                    .and_then(|d| d.get("text"))
-                    .and_then(|v| v.as_str())
-                {
-                    if !text.is_empty() {
-                        self.accumulated_text.push_str(text);
-                        self.pending
-                            .push(output_text_delta_event(&self.item_id, text));
+                let delta_type = val.get("delta").and_then(|d| d.get("type")).and_then(|v| v.as_str()).unwrap_or("text_delta");
+                let text = val.get("delta").and_then(|d| d.get("text")).and_then(|v| v.as_str()).unwrap_or("");
+
+                match delta_type {
+                    "thinking_delta" | "reasoning_delta" | "signature_delta" => {
+                        if !self.thinking_active {
+                            self.close_thinking();
+                            self.pending.push(content_part_added_event("thinking"));
+                            self.thinking_active = true;
+                        }
+                        if !text.is_empty() {
+                            self.accumulated_thinking.push_str(text);
+                            self.pending.push(thinking_delta_event(&self.item_id, text));
+                        }
+                    }
+                    _ => {
+                        if !self.output_text_active {
+                            self.pending.push(content_part_added_event("output_text"));
+                            self.output_text_active = true;
+                        }
+                        if !text.is_empty() {
+                            self.accumulated_text.push_str(text);
+                            self.pending.push(output_text_delta_event(&self.item_id, text));
+                        }
                     }
                 }
             }
-            "content_block_stop" => {}
-            "message_delta" => {}
+            "content_block_stop" => {
+                // Close any active blocks when the block ends
+                if self.thinking_active {
+                    self.close_thinking();
+                }
+            }
+            "message_delta" => {
+                // Contains stop_reason and usage — nothing to emit for SSE
+            }
             "message_stop" => {
+                if self.thinking_active {
+                    self.close_thinking();
+                }
                 self.emit_end_events();
             }
-            _ => {}
+            "ping" => {
+                // Anthropic ping events — ignore
+            }
+            _ => {
+                // Unknown events — ignore
+            }
         }
     }
 }

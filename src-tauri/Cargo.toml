@@ -12,7 +12,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 anyhow = "1"
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
@@ -27,3 +27,4 @@ tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
+tokio-tungstenite = "0.24"

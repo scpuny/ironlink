@@ -3,7 +3,7 @@ import { ConfigProvider, theme, Layout, Menu, Typography, Button, Space, Modal }
 import {
   DashboardOutlined, FileTextOutlined,
   ToolOutlined, SunOutlined, MoonOutlined, TranslationOutlined,
-  GithubOutlined, ApiOutlined, BarsOutlined, InfoCircleOutlined,
+  GithubOutlined, ApiOutlined, BarsOutlined, InfoCircleOutlined, SwapOutlined,
 } from '@ant-design/icons';
 import { I18nProvider, useI18n } from './i18n';
 import { AppearanceProvider, useAppearance } from './appearance/store';
@@ -15,6 +15,7 @@ import ConfigEditor from './components/pages/ConfigEditor';
 import LogViewer from './components/pages/LogViewer';
 import AboutPage from './components/pages/About';
 import SettingsPanel from './components/pages/Settings';
+import ModelMappings from './components/pages/ModelMappings';
 import { useStatus } from './hooks/useApi';
 import logoImg from './assets/logo.png';
 const { Sider, Content, Header } = Layout;
@@ -22,6 +23,7 @@ const { Sider, Content, Header } = Layout;
 const navItems = [
   { key: 'Status', icon: <DashboardOutlined />, labelKey: 'overview' },
   { key: 'Providers', icon: <ApiOutlined />, labelKey: 'providers' },
+  { key: 'Mappings', icon: <SwapOutlined />, labelKey: 'mappings' },
   { key: 'Config', icon: <FileTextOutlined />, labelKey: 'config' },
   { key: 'Settings', icon: <ToolOutlined />, labelKey: 'settings' },
   { key: 'About', icon: <InfoCircleOutlined />, labelKey: 'about' },
@@ -29,6 +31,7 @@ const navItems = [
 
 const pages: Record<string, React.FC> = {
   Providers: Providers,
+  Mappings: ModelMappings,
   Config: ConfigEditor, About: AboutPage, Settings: SettingsPanel,
 };
 

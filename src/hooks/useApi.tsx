@@ -68,3 +68,7 @@ export function useProfiles() {
 export function useProxyConfig() {
   return useAsync(() => api.fetchProxyConfig());
 }
+
+export function useModelMappings() {
+  return useAsync(() => api.fetchModelMappings());
+}

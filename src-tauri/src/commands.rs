@@ -209,3 +209,19 @@ pub async fn set_proxy_config(state: State<'_, Arc<AppState>>, config: ProxyConf
     Ok(())
 }
 
+// ── Model Mappings ──
+
+#[tauri::command]
+pub async fn get_model_mappings(state: State<'_, Arc<AppState>>) -> Result<Vec<ModelMapping>, String> {
+    Ok(state.model_mappings.lock().await.clone())
+}
+
+#[tauri::command]
+pub async fn save_model_mappings(state: State<'_, Arc<AppState>>, mappings: Vec<ModelMapping>) -> Result<(), String> {
+    *state.model_mappings.lock().await = mappings.clone();
+    if let Err(e) = config::write_model_mappings(&mappings) {
+        tracing::warn!("Failed to persist model mappings: {e}");
+    }
+    Ok(())
+}
+

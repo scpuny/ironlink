@@ -70,7 +70,7 @@ pub struct ProxyConfig {
 impl Default for ProxyConfig {
     fn default() -> Self {
         Self {
-            default_model: "deepseek/deepseek-v4-flash".into(),
+            default_model: "deepseek-v4-flash".into(),
             reasoning_effort: "medium".into(),
         }
     }
@@ -298,6 +298,18 @@ pub struct AnthropicContentItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnthropicContentBlock {
+    #[serde(rename = "type")]
+    pub block_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnthropicResponse {
     pub id: String,
     pub resp_type: String,
@@ -332,4 +344,16 @@ pub struct RelayProfile {
     pub model_list: Vec<String>,
     pub enabled: bool,
     pub active: bool,
+}
+
+// ── Model Mapping (Codex model → upstream model) ──
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelMapping {
+    /// The model name Codex sends (e.g. "gpt-5.5")
+    pub codex_model: String,
+    /// The model to use upstream (e.g. "deepseek/deepseek-v4-flash")
+    pub upstream_model: String,
+    /// Which relay profile to route through
+    pub profile_id: String,
 }

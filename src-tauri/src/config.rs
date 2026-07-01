@@ -42,7 +42,6 @@ fn write_proxy_enabled_state(enabled: bool) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    // Read existing settings, merge in proxy_enabled
     let existing = std::fs::read_to_string(&path).unwrap_or_else(|_| "{}".into());
     let mut obj: serde_json::Value = serde_json::from_str(&existing).unwrap_or(serde_json::json!({}));
     if let Some(map) = obj.as_object_mut() {
@@ -54,14 +53,10 @@ fn write_proxy_enabled_state(enabled: bool) -> anyhow::Result<()> {
 
 /// On startup: if proxy is disabled but Codex config still has proxy URL,
 /// auto-restore the original configs from backup (if backup exists).
-/// This prevents stale proxy URLs from breaking Codex when the app was
-/// closed without first stopping the proxy.
 pub fn auto_restore_codex_configs_if_needed() {
     let proxy_url = format!("http://127.0.0.1:{}/v1", PROXY_PORT);
     let codex_config = read_codex_config();
     let bak_path = codex_config_bak_path();
-
-    // If current config has proxy URL AND backup exists, restore original
     if codex_config.contains(&proxy_url) && bak_path.exists() {
         info!("Startup: Codex config has stale proxy URL, restoring from backup");
         if let Err(e) = restore_codex_configs() {
@@ -69,7 +64,6 @@ pub fn auto_restore_codex_configs_if_needed() {
         }
     }
 }
-
 
 /// Shared application state.
 pub struct AppState {
@@ -80,6 +74,7 @@ pub struct AppState {
     pub active_relay_id: Mutex<String>,
     pub proxy_config: Mutex<ProxyConfig>,
     pub log_buffer: Mutex<Vec<String>>,
+    pub model_mappings: Mutex<Vec<ModelMapping>>,
 }
 
 impl AppState {
@@ -105,16 +100,15 @@ impl AppState {
         };
         let active_id = profiles.iter().find(|p| p.active).map(|p| p.id.clone()).unwrap_or_else(|| profiles[0].id.clone());
 
-        // Auto-restore Codex config if proxy was left running when app last closed
         auto_restore_codex_configs_if_needed();
-
-        // Persist proxy_enabled state: save that we're starting disabled
         if let Err(e) = write_proxy_enabled_state(false) {
             warn!("Failed to persist proxy_enabled state: {e}");
         }
 
+        let mappings = read_model_mappings();
+
         Arc::new(Self {
-            proxy_enabled: Mutex::new(false),  // Start disabled; user must click start
+            proxy_enabled: Mutex::new(false),
             backend: Mutex::new(BackendConfig {
                 backend_type: BackendType::OpenaiChat,
                 api_base: "https://api.deepseek.com/v1".into(),
@@ -137,6 +131,7 @@ impl AppState {
             active_relay_id: Mutex::new(active_id),
             proxy_config: Mutex::new(ProxyConfig::default()),
             log_buffer: Mutex::new(Vec::new()),
+            model_mappings: Mutex::new(mappings),
         })
     }
 }
@@ -148,13 +143,11 @@ fn config_path() -> PathBuf {
     PathBuf::from(home).join(".ironlink").join("config.toml")
 }
 
-/// Read raw config.toml content.
 pub fn read_raw() -> String {
     let path = config_path();
     std::fs::read_to_string(&path).unwrap_or_default()
 }
 
-/// Write raw content to config.toml.
 pub fn write_raw(content: &str) -> anyhow::Result<()> {
     let path = config_path();
     if let Some(parent) = path.parent() {
@@ -165,14 +158,12 @@ pub fn write_raw(content: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Toggle base_url between proxy and original port.
 fn codex_config_bak_path() -> PathBuf {
     let mut p = codex_config_path();
     p.set_file_name("config.toml.ironlink.bak");
     p
 }
 
-/// Backup Codex config before modifying
 fn backup_codex_configs() -> anyhow::Result<()> {
     let src = codex_config_path();
     let dst = codex_config_bak_path();
@@ -183,7 +174,6 @@ fn backup_codex_configs() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Restore Codex config from backup
 fn restore_codex_configs() -> anyhow::Result<()> {
     let bak = codex_config_bak_path();
     let dst = codex_config_path();
@@ -197,41 +187,29 @@ fn restore_codex_configs() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Enable/disable proxy. Always writes config.toml and auth.json on enable,
-/// and always restores originals on disable — ensuring settings are always up-to-date.
 pub fn toggle_proxy(enable: bool, default_model: &str, reasoning_effort: &str) -> bool {
     if enable {
         let proxy_url = format!("http://127.0.0.1:{}/v1", PROXY_PORT);
         let content = read_codex_config();
-
-        // Backup originals, but only if the backup doesn't already contain original config.
-        // If proxy URL is already in config, the backup already has the originals — skip.
         if !content.contains(&proxy_url) {
             if let Err(e) = backup_codex_configs() {
                 warn!("Failed to backup Codex configs: {e}");
                 return false;
             }
         }
-
-        // Always write config.toml — ensures latest default_model is applied
         if let Err(e) = write_proxy_config(&content, default_model, reasoning_effort) {
             warn!("Failed to write proxy config: {e}");
             return false;
         }
         info!("Proxy enabled — config.toml written");
-
-        // Persist proxy_enabled = true
         if let Err(e) = write_proxy_enabled_state(true) {
             warn!("Failed to persist proxy_enabled state: {e}");
         }
-
         true
     } else {
-        // Restore from backup
         match restore_codex_configs() {
             Ok(_) => {
                 info!("Proxy disabled — configs restored from backup");
-                // Persist proxy_enabled = false
                 if let Err(e) = write_proxy_enabled_state(false) {
                     warn!("Failed to persist proxy_enabled state: {e}");
                 }
@@ -244,7 +222,7 @@ pub fn toggle_proxy(enable: bool, default_model: &str, reasoning_effort: &str) -
         }
     }
 }
-/// Path to ~/.codex/config.toml
+
 fn codex_config_path() -> PathBuf {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
@@ -252,12 +230,10 @@ fn codex_config_path() -> PathBuf {
     PathBuf::from(home).join(".codex").join("config.toml")
 }
 
-/// Read ~/.codex/config.toml
 pub fn read_codex_config() -> String {
     std::fs::read_to_string(codex_config_path()).unwrap_or_default()
 }
 
-/// Add a log entry to the in-memory ring buffer (keeps last 500)
 pub async fn push_log(state: &AppState, msg: String) {
     let mut buf = state.log_buffer.lock().await;
     buf.push(msg);
@@ -266,7 +242,6 @@ pub async fn push_log(state: &AppState, msg: String) {
     }
 }
 
-/// Path to ~/.codex/relay_profiles.json
 fn profiles_path() -> PathBuf {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
@@ -274,7 +249,6 @@ fn profiles_path() -> PathBuf {
     PathBuf::from(home).join(".ironlink").join("relay_profiles.json")
 }
 
-/// Read relay profiles from disk.
 pub fn read_profiles() -> Vec<RelayProfile> {
     let path = profiles_path();
     let content = match std::fs::read_to_string(&path) {
@@ -295,7 +269,6 @@ pub fn read_profiles() -> Vec<RelayProfile> {
     profiles
 }
 
-/// Write relay profiles to disk.
 pub fn write_profiles(profiles: &[RelayProfile]) -> anyhow::Result<()> {
     let path = profiles_path();
     if let Some(parent) = path.parent() {
@@ -307,89 +280,91 @@ pub fn write_profiles(profiles: &[RelayProfile]) -> anyhow::Result<()> {
     Ok(())
 }
 
+// ── Model Mappings: map Codex model names → upstream model + profile ──
 
-/// Modify only the proxy-related fields in Codex config.toml, preserving everything else.
-/// Parse original → update specific keys → serialize back.
+fn mappings_path() -> PathBuf {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| "/tmp".into());
+    PathBuf::from(home).join(".ironlink").join("model_mappings.json")
+}
+
+pub fn read_model_mappings() -> Vec<ModelMapping> {
+    let path = mappings_path();
+    match std::fs::read_to_string(&path) {
+        Ok(c) => serde_json::from_str(&c).unwrap_or_default(),
+        Err(_) => {
+            // Default mappings: each official Codex model → first enabled profile
+            let profiles = read_profiles();
+            if profiles.is_empty() { return vec![]; }
+            profiles.iter().filter(|p| p.enabled).take(5).enumerate().map(|(i, p)| {
+                let codex_models = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2"];
+                let target = if p.model_list.is_empty() { &p.model } else { &p.model_list[0] };
+                ModelMapping {
+                    codex_model: codex_models[i].to_string(),
+                    upstream_model: format!("{}/{}", p.provider_id, target),
+                    profile_id: p.id.clone(),
+                }
+            }).collect()
+        }
+    }
+}
+
+pub fn write_model_mappings(mappings: &[ModelMapping]) -> anyhow::Result<()> {
+    let path = mappings_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(mappings)?)?;
+    info!("model_mappings.json written ({} mappings)", mappings.len());
+    Ok(())
+}
+
+/// Look up the model mapping for a given Codex model name.
+/// Returns the upstream model slug and profile ID if found.
+pub fn resolve_mapping<'a>(mappings: &'a [ModelMapping], codex_model: &str) -> Option<&'a ModelMapping> {
+    mappings.iter().find(|m| m.codex_model == codex_model)
+}
+
 fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &str) -> anyhow::Result<()> {
     let proxy_url = format!("http://127.0.0.1:{}/v1", PROXY_PORT);
+    let bare_model = default_model
+        .split('/')
+        .last()
+        .unwrap_or(default_model);
 
-    // Extract existing models from config BEFORE mutating
-    let existing_models: Vec<String> = original
-        .parse::<toml::Value>()
-        .ok()
-        .and_then(|v| {
-            v.get("model_providers")
-                .and_then(|mp| mp.get("ironlink"))
-                .and_then(|c| c.get("models"))
-                .and_then(|m| m.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-        })
-        .unwrap_or_default();
-
-    // Build model list from active relay profiles
-    let profiles = read_profiles();
-    let mut active_models: Vec<String> = Vec::new();
-    for p in &profiles {
-        if !p.enabled { continue; }
-        for m in &p.model_list {
-            let prefixed = format!("{}/{}", p.provider_id, m);
-            if !active_models.contains(&prefixed) {
-                active_models.push(prefixed);
-            }
-        }
-        if !p.model.is_empty() {
-            let prefixed = format!("{}/{}", p.provider_id, p.model);
-            if !active_models.contains(&prefixed) {
-                active_models.push(prefixed);
-            }
-        }
-    }
-
-    // Fallback: if no models from relay profiles, preserve existing config models
-    if active_models.is_empty() {
-        active_models = existing_models;
-    }
-
-    // Parse original TOML, or start empty — NOW take mutable borrow
     let mut root: toml::Value = original.parse::<toml::Value>().unwrap_or(toml::Value::Table(toml::value::Table::new()));
     let table = root.as_table_mut().unwrap();
 
-    // Write the model as provided from proxy_config (with provider prefix).
-    table.insert("model".into(), toml::Value::String(default_model.to_string()));
+    table.insert("model".into(), toml::Value::String(bare_model.to_string()));
 
-    // Preserve sandbox_mode from original config
     let sandbox_mode = original.lines()
         .find(|l| l.trim().starts_with("sandbox_mode"))
         .and_then(|l| l.trim().split('=').nth(1).map(|s| s.trim().trim_matches('"').to_string()))
         .unwrap_or_else(|| "danger-full-access".to_string());
 
-    // Use custom provider "ironlink" instead of built-in "openai".
-    // This tells Codex to treat IronLink as a custom provider so all
-    // API requests (including GET /v1/models) route through the proxy,
-    // and the models list populates the chat model dropdown.
+    // Use [model_providers.ironlink] instead of top-level openai_base_url interception.
+    // This tells Codex to treat IronLink as a custom provider — all API requests go to
+    // proxy.base_url, and Codex does NOT use the built-in OpenAI provider.
     table.insert("model_provider".into(), toml::Value::String("ironlink".into()));
     table.insert("model_reasoning_effort".into(), toml::Value::String(reasoning_effort.to_string()));
     table.insert("sandbox_mode".into(), toml::Value::String(sandbox_mode.clone()));
 
-    // Remove stale openai_base_url — base_url now lives in [model_providers.ironlink]
+    // Remove stale top-level fields that conflict with custom provider usage
     table.remove("openai_base_url");
+    table.remove("model_catalog_json");
+    table.remove("shell_environment_policy");
 
-    // Set/overwrite [model_providers.ironlink] — Codex reads this as a custom provider
-    // definition. All requests (models, chat, responses) go to base_url.
+    // Set/overwrite [model_providers.ironlink] — Codex reads this as a custom provider.
+    // All requests (models, chat, responses) go to base_url.
     let ironlink = toml::Value::Table({
         let mut m = toml::value::Table::new();
         m.insert("name".into(), toml::Value::String("IronLink".into()));
-        m.insert("wire_api".into(), toml::Value::String("responses".into()));
-        m.insert("requires_openai_auth".into(), toml::Value::Boolean(false));
         m.insert("base_url".into(), toml::Value::String(proxy_url.clone()));
-        if !active_models.is_empty() {
-            m.insert(
-                "models".into(),
-                toml::Value::Array(
-                    active_models.iter().map(|m| toml::Value::String(m.clone())).collect()
-                ),
-            );
-        }
+        m.insert("wire_api".into(), toml::Value::String("responses".into()));
+        m.insert("supports_websockets".into(), toml::Value::Boolean(false));
+        m.insert("requires_openai_auth".into(), toml::Value::Boolean(false));
+        m.insert("allow_insecure".into(), toml::Value::Boolean(true));
         m
     });
     let mut mp = match table.remove("model_providers") {
@@ -399,10 +374,6 @@ fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &st
     mp.insert("ironlink".into(), ironlink);
     table.insert("model_providers".into(), toml::Value::Table(mp));
 
-    // Remove stale shell_environment_policy (written by old ccswitch tool)
-    table.remove("shell_environment_policy");
-
-    // Ensure [marketplaces.openai-bundled] has source_type = "local" but keep other keys
     let mut mkts = match table.remove("marketplaces") {
         Some(toml::Value::Table(t)) => t,
         _ => toml::value::Table::new(),
@@ -413,7 +384,6 @@ fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &st
     };
     let mut updated = bundled.clone();
     updated.insert("source_type".into(), toml::Value::String("local".into()));
-    // Preserve other bundled keys like last_updated, source
     for (k, v) in bundled {
         if k != "source_type" {
             updated.entry(k).or_insert(v);
@@ -428,6 +398,6 @@ fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &st
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(&path, &config)?;
-    info!("proxy config.toml written — modified only proxy fields, preserved all original sections");
+    info!("proxy config.toml written");
     Ok(())
 }

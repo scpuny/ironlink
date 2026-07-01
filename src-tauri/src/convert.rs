@@ -15,24 +15,52 @@ pub fn extract_messages(input: &serde_json::Value) -> (Option<String>, Vec<(Stri
         serde_json::Value::Array(arr) => {
             for item in arr {
                 let role = item.get("role").and_then(|r| r.as_str()).unwrap_or("user");
-                if role == "system" || role == "developer" {
-                    if let Some(text) = extract_all_text(item.get("content")) {
-                        system = Some(text);
+                match role {
+                    "system" | "developer" => {
+                        if let Some(text) = extract_all_text(item.get("content")) {
+                            system = Some(text);
+                        }
                     }
-                } else if role == "user" {
-                    if let Some(text) = extract_all_text(item.get("content")) {
-                        messages.push((role.to_string(), text, None));
+                    "user" => {
+                        let content = item.get("content");
+                        // Handle both string content and array content (with files, images)
+                        let text = match content {
+                            Some(serde_json::Value::String(s)) => Some(s.clone()),
+                            Some(serde_json::Value::Array(arr)) => {
+                                let parts: Vec<String> = arr.iter().filter_map(|c| {
+                                    c.get("text").and_then(|t| t.as_str()).map(String::from)
+                                }).collect();
+                                if parts.is_empty() { None } else { Some(parts.join("\n")) }
+                            }
+                            _ => None
+                        };
+                        if let Some(t) = text {
+                            messages.push((role.to_string(), t, None));
+                        }
                     }
-                } else if role == "assistant" {
-                    // For assistant messages, extract visible text and thinking separately
-                    let (text, thinking) = extract_assistant_content(item.get("content"));
-                    if text.is_some() || thinking.is_some() {
-                        messages.push((
-                            role.to_string(),
-                            text.unwrap_or_default(),
-                            thinking,
-                        ));
+                    "assistant" => {
+                        let (text, thinking) = extract_assistant_content(item.get("content"));
+                        if text.is_some() || thinking.is_some() {
+                            messages.push((role.to_string(), text.unwrap_or_default(), thinking));
+                        }
+                        // Handle tool_calls in the assistant message
+                        if let Some(tool_calls) = item.get("tool_calls").and_then(|v| v.as_array()) {
+                            for tc in tool_calls {
+                                if let Some(tc_text) = extract_tool_call_text(tc) {
+                                    messages.push(("assistant".into(), tc_text, None));
+                                }
+                            }
+                        }
                     }
+                    "tool" => {
+                        // Tool result messages: role=tool, content=result
+                        let tc = item.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+                        let result = extract_all_text(item.get("content")).unwrap_or_default();
+                        // Wrap tool result so the upstream chat model understands it
+                        let wrapped = format!("[tool_call_id: {}]\nresult: {}", tc, result);
+                        messages.push(("tool".into(), wrapped, None));
+                    }
+                    _ => {}
                 }
             }
         }
@@ -42,23 +70,36 @@ pub fn extract_messages(input: &serde_json::Value) -> (Option<String>, Vec<(Stri
     (system, messages)
 }
 
+fn extract_tool_call_text(tc: &serde_json::Value) -> Option<String> {
+    let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("call_unknown");
+    let func = tc.get("function")?;
+    let name = func.get("name").and_then(|v| v.as_str())?;
+    let args = func.get("arguments").and_then(|v| v.as_str()).unwrap_or("{}");
+    Some(format!("[tool_call: {}] {}({})", id, name, args))
+}
+
 /// Extract text content from a Responses API content field, including thinking blocks.
-/// For non-assistant messages, this combines all text.
 fn extract_all_text(content: Option<&serde_json::Value>) -> Option<String> {
     match content {
         Some(serde_json::Value::String(s)) => Some(s.clone()),
         Some(serde_json::Value::Array(arr)) => {
             let mut parts = Vec::new();
             for item in arr {
-                // Regular text content
                 if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
                     parts.push(text.to_string());
                 }
-                // Thinking/reasoning content
                 if item.get("type").and_then(|t| t.as_str()) == Some("thinking") {
                     if let Some(thinking) = item.get("thinking").and_then(|t| t.as_str()) {
                         parts.push(thinking.to_string());
                     }
+                }
+                // Handle input files (type: "input_file", "input_image")
+                if let Some(file_data) = item.get("file_data").and_then(|f| f.as_str()) {
+                    let filename = item.get("filename").and_then(|f| f.as_str()).unwrap_or("file");
+                    parts.push(format!("[{filename} data: {file_data}]"));
+                }
+                if let Some(image_url) = item.get("image_url").and_then(|u| u.as_str()) {
+                    parts.push(format!("[image: {image_url}]"));
                 }
             }
             if parts.is_empty() { None } else { Some(parts.join("\n")) }
@@ -68,7 +109,6 @@ fn extract_all_text(content: Option<&serde_json::Value>) -> Option<String> {
 }
 
 /// For assistant messages, separate visible text from thinking/reasoning content.
-/// Returns (visible_text, reasoning_content).
 fn extract_assistant_content(content: Option<&serde_json::Value>) -> (Option<String>, Option<String>) {
     match content {
         Some(serde_json::Value::String(s)) => (Some(s.clone()), None),
@@ -76,11 +116,9 @@ fn extract_assistant_content(content: Option<&serde_json::Value>) -> (Option<Str
             let mut text_parts = Vec::new();
             let mut thinking_parts = Vec::new();
             for item in arr {
-                // Regular text (output_text)
                 if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
                     text_parts.push(text.to_string());
                 }
-                // Thinking content
                 if item.get("type").and_then(|t| t.as_str()) == Some("thinking") {
                     if let Some(thinking) = item.get("thinking").and_then(|t| t.as_str()) {
                         thinking_parts.push(thinking.to_string());
@@ -97,79 +135,49 @@ fn extract_assistant_content(content: Option<&serde_json::Value>) -> (Option<Str
 
 // ── Responses API → Chat API (request) ──
 
-/// Convert tools from Responses API format to Chat Completions API format.
-///
-/// Responses API: `{"type": "function", "name": "...", "description": "...", "parameters": {...}}`
-/// Chat API:      `{"type": "function", "function": {"name": "...", "description": "...", "parameters": {...}}}`
-///
-/// Non-function tools (like `{"type": "built_in", "name": "web_search"}`) are skipped
-/// as they have no Chat Completions equivalent.
 fn tools_to_chat_format(tools: &[serde_json::Value]) -> Vec<serde_json::Value> {
-    tools
-        .iter()
-        .filter_map(|tool| {
-            // If already in Chat API format (has "function" field), keep as-is
-            if tool.get("function").is_some() {
-                return Some(tool.clone());
-            }
-
-            // Skip tools that don't have a name — they're likely Responses-only
-            // built-in tools (e.g. web_search, code_interpreter) with no Chat equivalent
-            let name = tool.get("name")?.as_str()?;
-
-            let mut function_obj = serde_json::Map::new();
-            function_obj.insert("name".into(), serde_json::Value::String(name.to_string()));
-            if let Some(desc) = tool.get("description") {
-                function_obj.insert("description".into(), desc.clone());
-            }
-            if let Some(params) = tool.get("parameters") {
-                function_obj.insert("parameters".into(), params.clone());
-            }
-            if let Some(strict) = tool.get("strict") {
-                function_obj.insert("strict".into(), strict.clone());
-            }
-
-            let mut chat_tool = serde_json::Map::new();
-            chat_tool.insert(
-                "type".into(),
-                serde_json::Value::String("function".into()),
-            );
-            chat_tool.insert(
-                "function".into(),
-                serde_json::Value::Object(function_obj),
-            );
-
-            Some(serde_json::Value::Object(chat_tool))
-        })
-        .collect()
+    tools.iter().filter_map(|tool| {
+        if tool.get("function").is_some() {
+            return Some(tool.clone());
+        }
+        let name = tool.get("name")?.as_str()?;
+        let mut function_obj = serde_json::Map::new();
+        function_obj.insert("name".into(), serde_json::Value::String(name.to_string()));
+        if let Some(desc) = tool.get("description") {
+            function_obj.insert("description".into(), desc.clone());
+        }
+        if let Some(params) = tool.get("parameters") {
+            function_obj.insert("parameters".into(), params.clone());
+        } else {
+            function_obj.insert("parameters".into(), serde_json::json!({
+                "type": "object",
+                "properties": {}
+            }));
+        }
+        if let Some(strict) = tool.get("strict") {
+            function_obj.insert("strict".into(), strict.clone());
+        }
+        let mut chat_tool = serde_json::Map::new();
+        chat_tool.insert("type".into(), serde_json::Value::String("function".into()));
+        chat_tool.insert("function".into(), serde_json::Value::Object(function_obj));
+        Some(serde_json::Value::Object(chat_tool))
+    }).collect()
 }
 
-/// Convert tool_choice from Responses API format to Chat Completions API format.
-///
-/// Responses API: `{"type": "function", "name": "my_func"}`
-/// Chat API:      `{"type": "function", "function": {"name": "my_func"}}`
 fn tool_choice_to_chat_format(tool_choice: &serde_json::Value) -> serde_json::Value {
-    // If it's a simple string or already has "function" key inside, return as-is
     if tool_choice.is_string() || tool_choice.get("function").is_some() {
         return tool_choice.clone();
     }
-
-    // Convert object format: {"type": "function", "name": "..."} -> {"type": "function", "function": {"name": "..."}}
     if let Some(obj) = tool_choice.as_object() {
         if let Some(name) = obj.get("name") {
             let mut function_obj = serde_json::Map::new();
             function_obj.insert("name".into(), name.clone());
-
             let mut result = obj.clone();
             result.remove("name");
-            result.insert(
-                "function".into(),
-                serde_json::Value::Object(function_obj),
-            );
+            result.insert("function".into(), serde_json::Value::Object(function_obj));
             return serde_json::Value::Object(result);
         }
     }
-
     tool_choice.clone()
 }
 
@@ -211,9 +219,6 @@ pub fn chat_to_responses_response(chat: &ChatResponse, model: &str) -> Responses
     let mut output = Vec::new();
     for choice in &chat.choices {
         let mut content = Vec::new();
-        // If the message has reasoning_content (e.g. DeepSeek thinking), emit it as a
-        // "thinking" content block BEFORE the output_text block — matching the SSE
-        // streaming order in sse.rs::SseTransformStream.
         if let Some(ref thinking) = choice.message.reasoning_content {
             if !thinking.is_empty() {
                 content.push(ResponsesOutputContent {
@@ -283,12 +288,28 @@ pub fn responses_to_anthropic_request(body: &serde_json::Value) -> anyhow::Resul
 pub fn anthropic_to_responses_response(anth: &AnthropicResponse, model: &str) -> ResponsesResponse {
     let mut content = Vec::new();
     for item in &anth.content {
-        if item.content_type == "text" {
-            content.push(ResponsesOutputContent {
-                content_type: "output_text".into(),
-                text: Some(item.text.clone()),
-                thinking: None,
-            });
+        match item.content_type.as_str() {
+            "text" => {
+                content.push(ResponsesOutputContent {
+                    content_type: "output_text".into(),
+                    text: Some(item.text.clone()),
+                    thinking: None,
+                });
+            }
+            "thinking" | "reasoning" => {
+                content.push(ResponsesOutputContent {
+                    content_type: "thinking".into(),
+                    text: None,
+                    thinking: Some(item.text.clone()),
+                });
+            }
+            _ => {
+                content.push(ResponsesOutputContent {
+                    content_type: "output_text".into(),
+                    text: Some(item.text.clone()),
+                    thinking: None,
+                });
+            }
         }
     }
 
@@ -313,3 +334,4 @@ pub fn anthropic_to_responses_response(anth: &AnthropicResponse, model: &str) ->
         usage,
     }
 }
+

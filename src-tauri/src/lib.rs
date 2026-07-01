@@ -32,6 +32,8 @@ pub fn start_proxy(state: Arc<AppState>) {
             .route("/api/profiles/activate", post(api::post_profiles_activate))
             .route("/api/config", get(api::get_config).put(api::put_config))
             .route("/v1/models", get(proxy::handle_models))
+            .route("/v1/responses/websocket", get(proxy::handle_websocket))
+            .route("/v1/realtime", get(proxy::handle_websocket))
             .route("/v1/{*path}", any(proxy::handle_proxy))
             .layer(CorsLayer::permissive())
             .with_state(state);
@@ -89,7 +91,9 @@ pub fn run() {
             commands::activate_profile,
             commands::fetch_upstream_models,
             commands::get_proxy_config,
-            commands::set_proxy_config,            
+            commands::set_proxy_config,
+            commands::get_model_mappings,
+            commands::save_model_mappings,            
         ])
         .setup(move |_app| {
             // Start proxy server (management API + proxy forwarding)

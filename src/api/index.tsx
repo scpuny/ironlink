@@ -122,3 +122,19 @@ export function fetchUpstreamModels(url: string, apiKey: string): Promise<string
     throw new Error(typeof e === 'string' ? e : e?.message || String(e));
   });
 }
+
+// ── Model Mappings ──
+
+export type ModelMapping = {
+  codex_model: string;
+  upstream_model: string;
+  profile_id: string;
+};
+
+export function fetchModelMappings(): Promise<ModelMapping[]> {
+  return tauriInvoke<ModelMapping[]>('get_model_mappings');
+}
+
+export function saveModelMappings(mappings: ModelMapping[]): Promise<void> {
+  return tauriInvoke<void>('save_model_mappings', { mappings });
+}
