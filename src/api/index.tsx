@@ -109,11 +109,19 @@ export function activateProfile(id: string): Promise<void> {
 
 // ── Applications (downstream apps like Codex, Claude) ──
 
+export type AppInjection = {
+  config_type: string;
+  config_path: string;
+};
+
 export type AppData = {
   id: string;
   name: string;
   protocol: string;
   enabled: boolean;
+  default_model: string;
+  models: string[];
+  config_injection: AppInjection | null;
   model_mappings: Record<string, { provider_id: string; upstream_model: string }>;
 };
 

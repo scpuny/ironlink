@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ConfigProvider, theme, Layout, Menu, Typography, Button, Space, Modal } from 'antd';
 import {
   DashboardOutlined, ToolOutlined, SunOutlined, MoonOutlined, TranslationOutlined,
-  GithubOutlined, ApiOutlined, BarsOutlined, InfoCircleOutlined, CodeOutlined,
+  GithubOutlined, ApiOutlined, BarsOutlined, InfoCircleOutlined,
 } from '@ant-design/icons';
 import { I18nProvider, useI18n } from './i18n';
 import { AppearanceProvider, useAppearance } from './appearance/store';
@@ -10,7 +10,6 @@ import { STYLE_TOKENS, DEFAULT_STYLE } from './appearance/themeTokens';
 import type { ThemeTokens } from './appearance/themeTokens';
 import StatusPanel from './components/pages/StatusPanel';
 import Applications from './components/pages/Applications';
-import CodexPlatform from './components/pages/CodexPlatform';
 import LogViewer from './components/pages/LogViewer';
 import AboutPage from './components/pages/About';
 import SettingsPanel from './components/pages/Settings';
@@ -21,7 +20,6 @@ const { Sider, Content, Header } = Layout;
 
 const navItems = [
   { key: 'Status', icon: <DashboardOutlined />, labelKey: 'overview' },
-  { key: 'Codex', icon: <CodeOutlined />, labelKey: 'codex_platform' },
   { key: 'Applications', icon: <ApiOutlined />, labelKey: 'applications' },
   { key: 'Providers', icon: <ApiOutlined />, labelKey: 'providers' },
   { key: 'Settings', icon: <ToolOutlined />, labelKey: 'settings' },
@@ -31,7 +29,6 @@ const navItems = [
 const pages: Record<string, React.FC> = {
   Providers: Providers,
   Applications: Applications,
-  Codex: CodexPlatform,
   About: AboutPage,
   Settings: SettingsPanel,
 };

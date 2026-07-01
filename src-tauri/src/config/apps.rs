@@ -1,17 +1,17 @@
 //! Application config persistence.
 //!
-//! Stores downstream app definitions (Codex Desktop, Claude Desktop, etc.)
-//! in ~/.ironlink/apps.json, each with its own model mappings.
+//! Stores downstream app definitions in ~/.ironlink/apps.json.
+//! Each app bundles its protocol, models, mappings, and config injection info.
 
 use std::path::PathBuf;
-use crate::models::AppConfig;
+use crate::models::{AppConfig, AppInjection, MappingTarget};
 
 fn apps_path() -> PathBuf {
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| "/tmp".into());
     PathBuf::from(home).join(".ironlink").join("apps.json")
 }
 
-/// Read apps from the JSON file on disk, or return a default Codex app.
+/// Read apps from disk, or return defaults.
 pub fn read() -> Vec<AppConfig> {
     let path = apps_path();
     match std::fs::read_to_string(&path) {
@@ -20,7 +20,7 @@ pub fn read() -> Vec<AppConfig> {
     }
 }
 
-/// Persist apps to the JSON file on disk.
+/// Persist apps to disk.
 pub fn write(apps: &[AppConfig]) -> anyhow::Result<()> {
     let path = apps_path();
     if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
@@ -29,7 +29,7 @@ pub fn write(apps: &[AppConfig]) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Default app list — Codex Desktop with empty mappings.
+/// Default app list — Codex Desktop (enabled) + Claude Desktop (disabled).
 fn default_apps() -> Vec<AppConfig> {
     vec![
         AppConfig {
@@ -37,6 +37,18 @@ fn default_apps() -> Vec<AppConfig> {
             name: "Codex Desktop".into(),
             protocol: "responses".into(),
             enabled: true,
+            default_model: "gpt-5.5".into(),
+            models: vec![
+                "gpt-5.5".into(), "gpt-5.4".into(), "gpt-5.4-mini".into(),
+                "gpt-5.3-codex".into(), "gpt-5.2".into(),
+            ],
+            config_injection: Some(AppInjection {
+                config_type: "codex_toml".into(),
+                config_path: {
+                    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+                    format!("{}/.codex/config.toml", home)
+                },
+            }),
             model_mappings: std::collections::HashMap::new(),
         },
         AppConfig {
@@ -44,6 +56,11 @@ fn default_apps() -> Vec<AppConfig> {
             name: "Claude Desktop".into(),
             protocol: "anthropic".into(),
             enabled: false,
+            default_model: "claude-sonnet-4".into(),
+            models: vec![
+                "claude-sonnet-4-20250514".into(), "claude-4-opus-20250514".into(),
+            ],
+            config_injection: None,
             model_mappings: std::collections::HashMap::new(),
         },
     ]
