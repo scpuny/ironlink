@@ -73,6 +73,10 @@ export function fetchCodexConfigFile(): Promise<string> {
   return tauriInvoke<string>('get_codex_config_file');
 }
 
+export function readFileContent(path: string): Promise<string> {
+  return tauriInvoke<string>('read_file_content', { path });
+}
+
 // ── Logs ──
 
 export function fetchLogs(): Promise<string[]> {
@@ -148,3 +152,4 @@ export function fetchUpstreamModels(url: string, apiKey: string): Promise<string
     throw new Error(typeof e === 'string' ? e : e?.message || String(e));
   });
 }
+

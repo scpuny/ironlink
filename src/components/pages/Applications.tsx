@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Button, Typography, Tag, message as antMsg, Switch, Select, Drawer, Divider, Space, } from 'antd';
-import { SettingOutlined, CodeOutlined, SwapOutlined, CloseOutlined, EditOutlined, SaveOutlined } from '@ant-design/icons';
+import { Button, Typography, Tag, message as antMsg, Switch, Select, Divider, Space, Modal } from 'antd';
+import { SettingOutlined, CodeOutlined, EditOutlined, CloseOutlined, ArrowLeftOutlined, CheckOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import { EditorView, basicSetup } from 'codemirror';
 import { EditorState } from '@codemirror/state';
 import { StreamLanguage } from '@codemirror/language';
@@ -8,7 +8,7 @@ import { toml } from '@codemirror/legacy-modes/mode/toml';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useApps, useProfiles, useProxyConfig } from '../../hooks/useApi';
 import { useI18n } from '../../i18n';
-import { saveApps, setProxyConfig, toggleProxy, getAutoStart, fetchCodexConfigFile } from '../../api';
+import { saveApps, setProxyConfig, toggleProxy, getAutoStart, fetchCodexConfigFile, readFileContent } from '../../api';
 import type { AppData } from '../../api';
 
 const { Text, Title } = Typography;
@@ -49,10 +49,28 @@ export default function Applications() {
   const [_, setAuto] = useState(false);
   const [codexConfig, setCodexConfig] = useState('');
   const [showConfig, setShowConfig] = useState(false);
+  const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [configModalContent, setConfigModalContent] = useState('');
+  const [configModalTitle, setConfigModalTitle] = useState('');
+  const [configModalLoading, setConfigModalLoading] = useState(false);
 
-  // Drawer state
-  const [configDrawerApp, setConfigDrawerApp] = useState<AppData | null>(null);
-  const [mappingsDrawerApp, setMappingsDrawerApp] = useState<AppData | null>(null);
+  const openConfigModal = async (app: AppData) => {
+    if (!app.config_injection?.config_path) { antMsg.warning('No config path configured'); return; }
+    setConfigModalTitle(app.name + ' - ' + app.config_injection.config_path);
+    setConfigModalOpen(true);
+    setConfigModalLoading(true);
+    try {
+      const text = await readFileContent(app.config_injection.config_path);
+      setConfigModalContent(text || '// ' + 'File is empty or not found');
+    } catch (e: any) {
+      setConfigModalContent('// Error reading file: ' + (e?.message || String(e)));
+    }
+    setConfigModalLoading(false);
+  };
+
+  // Edit mode: single form per app
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<AppData | null>(null);
 
   useEffect(() => {
     if (appsData) setApps(appsData);
@@ -73,11 +91,31 @@ export default function Applications() {
     setApps(next); doSave(next);
   };
 
-  // Mappings
-  const toggleMapping = (appId: string, codexModel: string) => {
-    const app = apps.find(a => a.id === appId);
-    if (!app) return;
-    const mappings = { ...app.model_mappings };
+  const startEdit = (app: AppData) => {
+    setDraft({ ...app, model_mappings: { ...app.model_mappings } });
+    setEditingId(app.id);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft(null);
+  };
+
+  const saveEdit = () => {
+    if (!draft) return;
+    updateApp(draft.id, draft);
+    cancelEdit();
+  };
+
+  const updateDraft = (patch: Partial<AppData>) => {
+    if (!draft) return;
+    setDraft({ ...draft, ...patch });
+  };
+
+  // Mapping helpers
+  const toggleMapping = (codexModel: string) => {
+    if (!draft) return;
+    const mappings = { ...draft.model_mappings };
     if (codexModel in mappings) {
       delete mappings[codexModel];
     } else {
@@ -87,14 +125,14 @@ export default function Applications() {
         upstream_model: firstProvider?.model || '',
       };
     }
-    updateApp(appId, { model_mappings: mappings });
+    setDraft({ ...draft, model_mappings: mappings });
   };
 
-  const updateMappingTarget = (appId: string, codexModel: string, field: 'provider_id' | 'upstream_model', value: string) => {
-    const app = apps.find(a => a.id === appId);
-    if (!app || !(codexModel in app.model_mappings)) return;
-    updateApp(appId, {
-      model_mappings: { ...app.model_mappings, [codexModel]: { ...app.model_mappings[codexModel], [field]: value } },
+  const updateMappingTarget = (codexModel: string, field: 'provider_id' | 'upstream_model', value: string) => {
+    if (!draft || !(codexModel in draft.model_mappings)) return;
+    setDraft({
+      ...draft,
+      model_mappings: { ...draft.model_mappings, [codexModel]: { ...draft.model_mappings[codexModel], [field]: value } },
     });
   };
 
@@ -128,8 +166,9 @@ export default function Applications() {
   };
 
   return (
-    <div style={{ width: '100%', maxWidth: 800, margin: '0 auto' }}>
-      {/* Fluent 2 header */}
+    <>
+    <div style={{ width: '100%', margin: '0 auto' }}>
+      {/* Page header */}
       <div className="fluent-card" style={{ padding: '24px 28px', marginBottom: 20, borderRadius: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <div className="fluent-icon-box" style={{
@@ -146,12 +185,152 @@ export default function Applications() {
         </div>
       </div>
 
-      {/* App cards */}
+      {/* App list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {apps.map(app => {
           const mappingCount = Object.keys(app.model_mappings).length;
           const isCodex = app.id === 'codex-desktop';
+          const isEditing = editingId === app.id;
           const color = isCodex ? '#0078D4' : '#B088E0';
+
+          // ── Edit mode: single unified form ──
+          if (isEditing && draft) {
+            return (
+              <div key={app.id} className="fluent-list-card" style={{
+                borderRadius: 8, padding: '20px 24px',
+                background: 'var(--card-bg)',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                border: '2px solid var(--accent-border)',
+              }}>
+                {/* Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                  <Space size={8}>
+                    <Button type="text" size="small" icon={<ArrowLeftOutlined />} onClick={cancelEdit} style={{ borderRadius: 4 }} />
+                    <Text strong style={{ fontSize: 15 }}>{draft.name}</Text>
+                  </Space>
+                  <Space size={4}>
+                    <Button  onClick={cancelEdit} style={{ borderRadius: 4 }}>{t('cancel')}</Button>
+                    <Button  type="primary" icon={<CheckOutlined />} onClick={saveEdit} style={{ borderRadius: 4 }}>{t('save')}</Button>
+                  </Space>
+                </div>
+
+                {/* Basic settings */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('default_model')}</Text>
+                    <Select  value={draft.default_model} style={{ width: '100%' }}
+                      onChange={v => updateDraft({ default_model: v })}
+                      options={CODEX_MODELS.map(m => ({ value: m, label: m }))} />
+                  </div>
+                  <div>
+                    <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('enabled')}</Text>
+                    <Switch checked={draft.enabled} onChange={c => updateDraft({ enabled: c })} />
+                  </div>
+                </div>
+
+                {/* Config injection */}
+                <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>{t('config_injection')}</Text>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('config_type')}</Text>
+                    <Select  style={{ width: '100%' }}
+                      value={draft.config_injection?.config_type || 'codex_toml'}
+                      onChange={v => updateDraft({ config_injection: { config_type: v, config_path: draft.config_injection?.config_path || '' } })}
+                      options={[
+                        { value: 'codex_toml', label: 'codex_toml' },
+                        { value: 'claude_json', label: 'claude_json' },
+                        { value: 'custom', label: 'custom' },
+                      ]} />
+                  </div>
+                  <div>
+                    <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('config_path')}</Text>
+                    <input className="drawer-input"
+                      value={draft.config_injection?.config_path || ''}
+                      onChange={e => updateDraft({ config_injection: { config_type: draft.config_injection?.config_type || 'codex_toml', config_path: e.target.value } })}
+                      placeholder="~/.codex/config.toml" />
+                  </div>
+                </div>
+
+                {/* Codex proxy settings */}
+                {isCodex && (
+                  <>
+                    <Divider style={{ margin: '4px 0', fontSize: 11, color: 'var(--text-tertiary)' }}>{t('proxy_settings')}</Divider>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                      <div>
+                        <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('reasoning_effort')}</Text>
+                        <Select  value={reasoningEffort} onChange={setReasoning} style={{ width: '100%' }}
+                          options={[
+                            { value: 'low', label: t('effort_low') },
+                            { value: 'medium', label: t('effort_medium') },
+                            { value: 'high', label: t('effort_high') },
+                          ]} />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, paddingBottom: 2 }}>
+                        <div>
+                          <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('proxy')}</Text>
+                          <Button  type={proxyEnabled ? 'default' : 'primary'} danger={proxyEnabled}
+                            onClick={handleToggleProxy} style={{ borderRadius: 6, minWidth: 80 }}>
+                            {proxyEnabled ? t('disable') : t('enable')}
+                          </Button>
+                        </div>
+                        <Button  icon={<CodeOutlined />} onClick={handleViewCodexConfig} style={{ borderRadius: 6 }}>
+                          {t('view_codex_config')}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {showConfig && codexConfig && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <Text strong style={{ fontSize: 12 }}>{t('codex_config_title')}</Text>
+                          <Button type="text"  icon={<CloseOutlined />} onClick={() => setShowConfig(false)} style={{ borderRadius: 4 }} />
+                        </div>
+                        <CodeMirrorBox value={codexConfig} />
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Model mappings */}
+                <Divider style={{ margin: '16px 0 12px', fontSize: 11, color: 'var(--text-tertiary)' }}>{t('model_mappings')}</Divider>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {(draft.models.length > 0 ? draft.models : CODEX_MODELS).map(codexModel => {
+                    const mapping = draft.model_mappings[codexModel];
+                    return (
+                      <div key={codexModel} style={{
+                        display: 'flex', gap: 12, alignItems: 'center', padding: '5px 8px',
+                        borderRadius: 6, background: 'var(--config-row-bg)',
+                        minHeight: '45px'
+                      }}>
+                        <Switch  checked={!!mapping} onChange={() => toggleMapping(codexModel)} />
+                        <code style={{ width: 100, fontSize: 12, fontFamily: 'monospace', fontWeight: mapping ? 500 : 400 }}>{codexModel}</code>
+                        {mapping ? (
+                          <>
+                            <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                              <ArrowRightOutlined />
+                            </span>
+                            <Select  value={mapping.provider_id}
+                              onChange={v => updateMappingTarget(codexModel, 'provider_id', v)}
+                              style={{ width: 200 }}
+                              options={(profilesData || []).filter(p => p.enabled).map(p => ({ value: p.provider_id, label: p.name }))} />
+                            <Select  value={mapping.upstream_model}
+                              onChange={v => updateMappingTarget(codexModel, 'upstream_model', v)}
+                              style={{ width: 260 }} showSearch
+                              options={modelsForProvider(mapping.provider_id).map(m => ({ value: m, label: m }))} />
+                          </>
+                        ) : (
+                          <Text style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{t('no_mappings_hint')}</Text>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+
+          // ── View mode ──
           return (
             <div key={app.id} className="fluent-list-card" style={{
               borderRadius: 8, padding: '16px 20px',
@@ -160,10 +339,8 @@ export default function Applications() {
               WebkitBackdropFilter: 'blur(20px) saturate(160%)',
               border: '1px solid var(--border-subtle)',
               opacity: app.enabled ? 1 : 0.45,
-              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
             }}>
-              {/* Top row: icon + name + protocol tags + enable switch */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                 <Space size={10} align="start">
                   <div style={{
                     width: 34, height: 34, borderRadius: 6,
@@ -183,39 +360,27 @@ export default function Applications() {
                     </div>
                     <Space size={14} style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
                       <span>{t('default_model')}: <code style={{ fontSize: 10 }}>{app.default_model || '-'}</code></span>
-                      {mappingCount > 0 && (
-                        <span style={{ cursor: 'pointer', color: 'var(--accent-border)' }}
-                          onClick={() => setMappingsDrawerApp(app)}>
-                          {mappingCount} {t('mappings_count', { count: mappingCount }).replace('{count} ', '')}
-                        </span>
-                      )}
+                      {mappingCount > 0 && <span>{mappingCount} {t('mappings_count', { count: mappingCount }).replace('{count} ', '')}</span>}
                     </Space>
                   </div>
                 </Space>
-                <Switch checked={app.enabled} onChange={c => updateApp(app.id, { enabled: c })} size="small" />
+                <Switch checked={app.enabled} onChange={c => updateApp(app.id, { enabled: c })}  />
               </div>
 
-              {/* Mapping tags */}
               {mappingCount > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8, marginTop: 2 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
                   {Object.entries(app.model_mappings).slice(0, 4).map(([codex, target]) => (
                     <Tag key={codex} style={{ fontSize: 9, lineHeight: '18px', padding: '0 6px', borderRadius: 3, margin: 0 }}>
                       {codex} <span style={{ opacity: 0.5 }}>→</span> {target.upstream_model}
                     </Tag>
                   ))}
-                  {mappingCount > 4 && (
-                    <Tag style={{ fontSize: 9, lineHeight: '18px', padding: '0 6px', borderRadius: 3, margin: 0 }}>
-                      +{mappingCount - 4}
-                    </Tag>
-                  )}
+                  {mappingCount > 4 && <Tag style={{ fontSize: 9, lineHeight: '18px', padding: '0 6px', borderRadius: 3, margin: 0 }}>+{mappingCount - 4}</Tag>}
                 </div>
               )}
 
-              {/* Config summary bar */}
               <div style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '8px 12px', borderRadius: 6,
-                background: 'var(--config-row-bg)', marginBottom: 0,
+                padding: '8px 12px', borderRadius: 6, background: 'var(--config-row-bg)',
               }}>
                 <Space size={8}>
                   <CodeOutlined style={{ fontSize: 12, opacity: 0.4 }} />
@@ -227,191 +392,40 @@ export default function Applications() {
                       <Text style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-secondary)', maxWidth: 280 }} ellipsis>
                         {app.config_injection.config_path}
                       </Text>
-                      <Tag color="blue" style={{ fontSize: 9, lineHeight: '16px', padding: '0 6px', borderRadius: 3, margin: 0 }}>
-                        configured
-                      </Tag>
+                      <Tag color="blue" style={{ fontSize: 9, lineHeight: '16px', padding: '0 6px', borderRadius: 3, margin: 0 }}>configured</Tag>
                     </>
                   ) : (
                     <Text style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{t('config_not_set')}</Text>
                   )}
                 </Space>
-                <Space size={4}>
-                  <Button type="text" size="small" icon={<EditOutlined />}
-                    onClick={() => setConfigDrawerApp(app)}
-                    style={{ borderRadius: 4, fontSize: 12 }}>
-                    {t('config')}
-                  </Button>
-                  <Button type="text" size="small" icon={<SwapOutlined />}
-                    onClick={() => setMappingsDrawerApp(app)}
-                    style={{ borderRadius: 4, fontSize: 12 }}>
-                    {t('model_mappings')}
-                    {mappingCount > 0 ? ` (${mappingCount})` : ''}
-                  </Button>
+                <Space size={2}>
+                  {app.config_injection?.config_path && (
+                    <Button type="text" size="small" icon={<CodeOutlined />} onClick={() => openConfigModal(app)} style={{ borderRadius: 4, fontSize: 12 }}>{t('view_config')}</Button>
+                  )}
+                  <Button type="text" size="small" icon={<EditOutlined />} onClick={() => startEdit(app)} style={{ borderRadius: 4, fontSize: 12 }}>{t('edit')}</Button>
                 </Space>
               </div>
             </div>
           );
         })}
       </div>
-
-      {/* ── Config Injection Drawer ── */}
-      <Drawer
-        title={<Space size={8}><SettingOutlined /><span>{t('config_injection')}: {configDrawerApp?.name}</span></Space>}
-        open={!!configDrawerApp}
-        onClose={() => setConfigDrawerApp(null)}
-        width={520}
-        styles={{ body: { padding: '20px 24px' } }}
-      >
-        {configDrawerApp && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Config type + path */}
-            <div className="drawer-field">
-              <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('config_type')}</Text>
-              <Select
-                size="small" style={{ width: '100%' }}
-                value={configDrawerApp.config_injection?.config_type || 'codex_toml'}
-                onChange={v => updateApp(configDrawerApp.id, {
-                  config_injection: { config_type: v, config_path: configDrawerApp.config_injection?.config_path || '' }
-                })}
-                options={[
-                  { value: 'codex_toml', label: 'codex_toml' },
-                  { value: 'claude_json', label: 'claude_json' },
-                  { value: 'custom', label: 'custom' },
-                ]}
-              />
-            </div>
-
-            <div className="drawer-field">
-              <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('config_path')}</Text>
-              <input className="drawer-input"
-                value={configDrawerApp.config_injection?.config_path || ''}
-                onChange={e => updateApp(configDrawerApp.id, {
-                  config_injection: {
-                    config_type: configDrawerApp.config_injection?.config_type || 'codex_toml',
-                    config_path: e.target.value,
-                  }
-                })}
-                placeholder="~/.codex/config.toml"
-              />
-            </div>
-
-            {/* Default model */}
-            <div className="drawer-field">
-              <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('default_model')}</Text>
-              <Select size="small" value={configDrawerApp.default_model} style={{ width: '100%' }}
-                onChange={v => updateApp(configDrawerApp.id, { default_model: v })}
-                options={CODEX_MODELS.map(m => ({ value: m, label: m }))}
-              />
-            </div>
-
-            {/* Codex-specific proxy settings */}
-            {configDrawerApp.id === 'codex-desktop' && (
-              <>
-                <Divider style={{ margin: '4px 0', fontSize: 11, color: 'var(--text-tertiary)' }}>
-                  {t('proxy_settings')}
-                </Divider>
-
-                <div className="drawer-row">
-                  <Text style={{ fontSize: 12 }}>{t('proxy')}</Text>
-                  <Button size="small"
-                    type={proxyEnabled ? 'default' : 'primary'}
-                    danger={proxyEnabled}
-                    onClick={handleToggleProxy}
-                    style={{ borderRadius: 6 }}>
-                    {proxyEnabled ? t('disable') : t('enable')}
-                  </Button>
-                </div>
-
-                <div className="drawer-field">
-                  <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('reasoning_effort')}</Text>
-                  <Select size="small" value={reasoningEffort} onChange={setReasoning} style={{ width: '100%' }}
-                    options={[
-                      { value: 'low', label: t('effort_low') },
-                      { value: 'medium', label: t('effort_medium') },
-                      { value: 'high', label: t('effort_high') },
-                    ]} />
-                </div>
-
-                <div className="drawer-field">
-                  <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Proxy URL</Text>
-                  <input className="drawer-input" readOnly value="http://127.0.0.1:15723/v1" />
-                </div>
-
-                <Divider style={{ margin: '4px 0' }} />
-
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <Button size="small" icon={<CodeOutlined />} onClick={handleViewCodexConfig} style={{ borderRadius: 6 }}>
-                    {t('view_codex_config')}
-                  </Button>
-                  <Button size="small" icon={<SaveOutlined />} onClick={() => {
-                    setProxyConfig({ default_model: codexApp?.default_model || 'gpt-5.5', reasoning_effort: reasoningEffort })
-                      .then(() => antMsg.success(t('saved')))
-                      .catch(() => antMsg.error(t('save_failed_msg')));
-                  }} style={{ borderRadius: 6 }}>
-                    {t('save')}
-                  </Button>
-                </div>
-              </>
-            )}
-
-            {/* Codex config raw view */}
-            {showConfig && codexConfig && configDrawerApp?.id === 'codex-desktop' && (
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <Text strong style={{ fontSize: 12 }}>{t('codex_config_title')}</Text>
-                  <Button type="text" size="small" icon={<CloseOutlined />} onClick={() => setShowConfig(false)} style={{ borderRadius: 4 }} />
-                </div>
-                <CodeMirrorBox value={codexConfig} />
-              </div>
-            )}
-          </div>
-        )}
-      </Drawer>
-
-      {/* ── Model Mappings Drawer ── */}
-      <Drawer
-        title={<Space size={8}><SwapOutlined /><span>{t('model_mappings')}: {mappingsDrawerApp?.name}</span></Space>}
-        open={!!mappingsDrawerApp}
-        onClose={() => setMappingsDrawerApp(null)}
-        width={500}
-        styles={{ body: { padding: '16px 20px' } }}
-      >
-        {mappingsDrawerApp && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {(mappingsDrawerApp.models.length > 0 ? mappingsDrawerApp.models : CODEX_MODELS).map(codexModel => {
-              const mapping = mappingsDrawerApp.model_mappings[codexModel];
-              return (
-                <div key={codexModel} style={{
-                  display: 'flex', gap: 6, alignItems: 'center', padding: '6px 8px',
-                  borderRadius: 6, background: mapping ? 'var(--config-row-bg)' : 'transparent',
-                  transition: 'background 0.15s',
-                }}>
-                  <Switch size="small" checked={!!mapping}
-                    onChange={() => toggleMapping(mappingsDrawerApp.id, codexModel)} />
-                  <code style={{ width: 100, fontSize: 12, fontFamily: 'monospace', fontWeight: mapping ? 500 : 400 }}>
-                    {codexModel}
-                  </code>
-                  {mapping ? (
-                    <>
-                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>→</span>
-                      <Select size="small" value={mapping.provider_id}
-                        onChange={v => updateMappingTarget(mappingsDrawerApp.id, codexModel, 'provider_id', v)}
-                        style={{ width: 120 }}
-                        options={(profilesData || []).filter(p => p.enabled).map(p => ({ value: p.provider_id, label: p.name }))} />
-                      <Select size="small" value={mapping.upstream_model}
-                        onChange={v => updateMappingTarget(mappingsDrawerApp.id, codexModel, 'upstream_model', v)}
-                        style={{ width: 150 }} showSearch
-                        options={modelsForProvider(mapping.provider_id).map(m => ({ value: m, label: m }))} />
-                    </>
-                  ) : (
-                    <Text style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{t('no_mappings_hint')}</Text>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Drawer>
     </div>
+
+      {/* Config file viewer modal */}
+      <Modal
+        title={<span style={{ fontSize: 14, fontWeight: 600 }}>{configModalTitle}</span>}
+        open={configModalOpen}
+        onCancel={() => setConfigModalOpen(false)}
+        footer={null}
+        width={700}
+        styles={{ body: { padding: 0, maxHeight: 480, overflow: 'auto' } }}
+      >
+        {configModalLoading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)' }}>{t('loading')}</div>
+        ) : (
+          <CodeMirrorBox value={configModalContent} />
+        )}
+      </Modal>
+    </>
   );
 }

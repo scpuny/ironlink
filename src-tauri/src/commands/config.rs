@@ -31,3 +31,9 @@ pub async fn get_auto_start() -> bool {
 pub async fn set_auto_start(enabled: bool) -> Result<(), String> {
     config::write_auto_start(enabled).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+/// Read content of any file by absolute path. Returns empty string if file doesn't exist.
+pub async fn read_file_content(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {}", e))
+}

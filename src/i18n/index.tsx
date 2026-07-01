@@ -159,6 +159,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'add_mapping': '添加映射',
     'mappings_count': '{count} 个映射',
     'no_mappings_hint': '暂无映射',
+    'view_config': '查看配置',
 
     // Backend config
     'backend_config': '后端配置',

@@ -86,6 +86,7 @@ pub fn run() {
             commands::config::get_auto_start,
             commands::config::set_auto_start,
             commands::config::get_codex_config_file,
+            commands::config::read_file_content,
             commands::profiles::get_profiles,
             commands::profiles::save_profiles,
             commands::profiles::activate_profile,
