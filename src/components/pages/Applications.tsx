@@ -1,6 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button, Typography, Tag, message as antMsg, Switch, Card, Select, Collapse, Divider } from 'antd';
-import { CodeOutlined } from '@ant-design/icons';
+import { CodeOutlined, CloseOutlined } from '@ant-design/icons';
+import { EditorView, basicSetup } from 'codemirror';
+import { EditorState } from '@codemirror/state';
+import { StreamLanguage } from '@codemirror/language';
+import { toml } from '@codemirror/legacy-modes/mode/toml';
+import { oneDark } from '@codemirror/theme-one-dark';
 import { useApps, useProfiles, useProxyConfig } from '../../hooks/useApi';
 import { useI18n } from '../../i18n';
 import { saveApps, setProxyConfig, toggleProxy, getAutoStart, fetchCodexConfigFile } from '../../api';
@@ -11,6 +16,41 @@ const CODEX_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gp
 
 function protocolLabel(p: string, t: (k: string) => string) {
   return p === 'responses' ? t('protocol_responses') : p === 'anthropic' ? t('protocol_anthropic') : p;
+}
+
+function CodeMirrorBox({ value, lang, themeMode }: { value: string; lang: string; themeMode: string }) {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
+
+  useEffect(() => {
+    if (!editorRef.current) return;
+    const extensions = [basicSetup, EditorView.editable.of(false)];
+    if (lang === 'toml') extensions.push(StreamLanguage.define(toml));
+    if (themeMode === 'dark') extensions.push(oneDark);
+    const state = EditorState.create({ doc: value, extensions });
+    const view = new EditorView({ state, parent: editorRef.current });
+    viewRef.current = view;
+    return () => view.destroy();
+  }, [lang, themeMode]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const cur = view.state.doc.toString();
+    if (cur !== value) {
+      view.dispatch({
+        changes: { from: 0, to: cur.length, insert: value },
+      });
+    }
+  }, [value]);
+
+  return (
+    <div ref={editorRef} style={{
+      borderRadius: 8, overflow: 'hidden',
+      border: '1px solid var(--border-subtle)',
+      maxHeight: 300, overflowY: 'auto',
+    }} />
+  );
 }
 
 export default function Applications() {
@@ -223,12 +263,11 @@ export default function Applications() {
       {/* ── Codex config raw view ── */}
       {showConfig && codexConfig && (
         <Card className="hover-card" size="small" style={{ borderRadius: 10 }}>
-          <Text strong style={{ fontSize: 12 }}>{t('codex_config_title')}</Text>
-          <pre style={{
-            fontSize: 10, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-            background: 'var(--config-row-bg)', padding: 10, borderRadius: 6,
-            maxHeight: 300, overflow: 'auto', marginTop: 8,
-          }}>{codexConfig}</pre>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text strong style={{ fontSize: 12 }}>{t('codex_config_title')}</Text>
+            <Button type="text" size="small" icon={<CloseOutlined />} onClick={() => setShowConfig(false)} />
+          </div>
+          <CodeMirrorBox value={codexConfig} lang="toml" themeMode="dark" />
         </Card>
       )}
     </div>
