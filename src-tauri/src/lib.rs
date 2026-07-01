@@ -92,6 +92,8 @@ pub fn run() {
             commands::models_cmd::fetch_upstream_models,
             commands::status::get_proxy_config,
             commands::status::set_proxy_config,
+            commands::apps::get_apps,
+            commands::apps::save_apps,
         ])
         .setup(move |_app| {
             start_proxy(state);
