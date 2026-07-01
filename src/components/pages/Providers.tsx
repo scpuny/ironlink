@@ -148,7 +148,7 @@ export default function Providers() {
   }, [editingId]);
 
   const persistProfiles = useCallback((ps: RelayProfile[]) => {
-    saveProfiles(ps.map(toApiProfile)).then(refetchProfiles).catch(() => antMsg.error(t('save_failed')));
+    saveProfiles(ps.map(toApiProfile)).then(refetchProfiles).catch(() => antMsg.error(t('save_failed_msg')));
   }, [refetchProfiles]);
 
   const handlePresetSelect = (preset: ProviderPreset) => {
@@ -392,7 +392,7 @@ export default function Providers() {
                 icon={<SaveOutlined />}
                 onClick={() => {
                   if (proxyDraft) {
-                    setProxyConfig(proxyDraft).then(refetchProxyCfg).catch(() => antMsg.error(t('save_failed')));
+                    setProxyConfig(proxyDraft).then(refetchProxyCfg).catch(() => antMsg.error(t('save_failed_msg')));
                   }
                 }}
               >{t('save')}</Button>
@@ -405,10 +405,10 @@ export default function Providers() {
 
   // ── Detail/Editor View ──
   return (
-    <div style={{ border: '1px solid var(--border-subtler)', borderRadius: 12, background: 'var(--bg-primary)', overflow: 'hidden' }}>
+    <div style={{ border: '1px solid var(--border-subtler)', borderRadius: 12, background: 'var(--card-bg)', overflow: 'hidden' }}>
       <div style={{
         padding: '10px 16px', borderBottom: '1px solid var(--border-subtler)',
-        background: 'var(--card-bg)', display: 'flex', alignItems: 'center', gap: 12,
+        background: 'var(--accent-bg)', display: 'flex', alignItems: 'center', gap: 12,
       }}>
         <Button icon={<ArrowLeftOutlined />} onClick={handleCancelEdit}>{t('back_to_list')}</Button>
         <Button type="primary" icon={<SaveOutlined />} onClick={handleSaveEdit}>{t('save')}</Button>

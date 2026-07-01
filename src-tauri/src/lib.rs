@@ -1,11 +1,10 @@
 // Re-export all modules for the Tauri app
 pub mod api;
 pub mod config;
-pub mod convert;
 pub mod models;
+pub mod protocol;
 pub mod proxy;
 pub mod commands;
-pub mod sse;
 
 use std::sync::Arc;
 use std::net::SocketAddr;
@@ -29,6 +28,7 @@ pub fn start_proxy(state: Arc<AppState>) {
             .route("/api/proxy", post(api::toggle_proxy_handler))
             .route("/api/logs", get(api::get_logs))
             .route("/api/profiles", get(api::get_profiles).put(api::put_profiles))
+            .route("/api/apps", get(api::get_apps).put(api::put_apps))
             .route("/api/profiles/activate", post(api::post_profiles_activate))
             .route("/api/config", get(api::get_config).put(api::put_config))
             .route("/v1/models", get(proxy::handle_models))
@@ -39,7 +39,7 @@ pub fn start_proxy(state: Arc<AppState>) {
             .with_state(state);
 
         let addr = SocketAddr::from(([0, 0, 0, 0], config::PROXY_PORT));
-        
+
         // Kill old process on this port
         let _ = std::process::Command::new("sh")
             .args(["-c", &format!("lsof -ti :{} | xargs kill 2>/dev/null", config::PROXY_PORT)])
@@ -74,30 +74,26 @@ pub fn run() {
     tauri::Builder::default()
         .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
-            commands::get_status,
-            commands::get_backend,
-            commands::update_backend,
-            commands::get_models,
-            commands::update_models,
-            commands::toggle_proxy,
-            commands::get_config_file,
-            commands::write_config_file,
-            commands::get_logs,
-            commands::get_auto_start,
-            commands::set_auto_start,
-            commands::get_codex_config_file,
-            commands::get_profiles,
-            commands::save_profiles,
-            commands::activate_profile,
-            commands::fetch_upstream_models,
-            commands::get_proxy_config,
-            commands::set_proxy_config,
-            commands::get_model_mappings,
-            commands::save_model_mappings,            
+            commands::status::get_status,
+            commands::backend::get_backend,
+            commands::backend::update_backend,
+            commands::models_cmd::get_models,
+            commands::models_cmd::update_models,
+            commands::backend::toggle_proxy,
+            commands::config::get_config_file,
+            commands::config::write_config_file,
+            commands::status::get_logs,
+            commands::config::get_auto_start,
+            commands::config::set_auto_start,
+            commands::config::get_codex_config_file,
+            commands::profiles::get_profiles,
+            commands::profiles::save_profiles,
+            commands::profiles::activate_profile,
+            commands::models_cmd::fetch_upstream_models,
+            commands::status::get_proxy_config,
+            commands::status::set_proxy_config,
         ])
         .setup(move |_app| {
-            // Start proxy server (management API + proxy forwarding)
-            // Only forwards traffic when proxy_enabled is set to true
             start_proxy(state);
             info!("Tauri UI started");
             Ok(())

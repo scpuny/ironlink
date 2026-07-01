@@ -69,6 +69,6 @@ export function useProxyConfig() {
   return useAsync(() => api.fetchProxyConfig());
 }
 
-export function useModelMappings() {
-  return useAsync(() => api.fetchModelMappings());
+export function useApps() {
+  return useAsync(() => api.fetchApps());
 }

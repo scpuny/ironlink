@@ -5,19 +5,12 @@ export interface BackendConfig {
   type: BackendType;
   api_base: string;
   api_key: string;
-  /** Display name for the provider */
   name?: string;
-  /** Default model used for requests */
   model?: string;
-  /** Test model for validation */
   test_model?: string;
-  /** Auth type */
   auth_type?: AuthType;
-  /** Custom headers (JSON) */
   custom_headers?: string;
-  /** Advanced config content (TOML) */
   config_contents?: string;
-  /** Custom user agent */
   user_agent?: string;
 }
 

@@ -1,38 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import { ConfigProvider, theme, Layout, Menu, Typography, Button, Space, Modal } from 'antd';
 import {
-  DashboardOutlined, FileTextOutlined,
-  ToolOutlined, SunOutlined, MoonOutlined, TranslationOutlined,
-  GithubOutlined, ApiOutlined, BarsOutlined, InfoCircleOutlined, SwapOutlined,
+  DashboardOutlined, ToolOutlined, SunOutlined, MoonOutlined, TranslationOutlined,
+  GithubOutlined, ApiOutlined, BarsOutlined, InfoCircleOutlined, CodeOutlined,
 } from '@ant-design/icons';
 import { I18nProvider, useI18n } from './i18n';
 import { AppearanceProvider, useAppearance } from './appearance/store';
 import { STYLE_TOKENS, DEFAULT_STYLE } from './appearance/themeTokens';
 import type { ThemeTokens } from './appearance/themeTokens';
 import StatusPanel from './components/pages/StatusPanel';
-import Providers from './components/pages/Providers';
-import ConfigEditor from './components/pages/ConfigEditor';
+import Applications from './components/pages/Applications';
+import CodexPlatform from './components/pages/CodexPlatform';
 import LogViewer from './components/pages/LogViewer';
 import AboutPage from './components/pages/About';
 import SettingsPanel from './components/pages/Settings';
-import ModelMappings from './components/pages/ModelMappings';
+import Providers from './components/pages/Providers';
 import { useStatus } from './hooks/useApi';
 import logoImg from './assets/logo.png';
 const { Sider, Content, Header } = Layout;
 
 const navItems = [
   { key: 'Status', icon: <DashboardOutlined />, labelKey: 'overview' },
+  { key: 'Codex', icon: <CodeOutlined />, labelKey: 'codex_platform' },
+  { key: 'Applications', icon: <ApiOutlined />, labelKey: 'applications' },
   { key: 'Providers', icon: <ApiOutlined />, labelKey: 'providers' },
-  { key: 'Mappings', icon: <SwapOutlined />, labelKey: 'mappings' },
-  { key: 'Config', icon: <FileTextOutlined />, labelKey: 'config' },
   { key: 'Settings', icon: <ToolOutlined />, labelKey: 'settings' },
   { key: 'About', icon: <InfoCircleOutlined />, labelKey: 'about' },
 ];
 
 const pages: Record<string, React.FC> = {
   Providers: Providers,
-  Mappings: ModelMappings,
-  Config: ConfigEditor, About: AboutPage, Settings: SettingsPanel,
+  Applications: Applications,
+  Codex: CodexPlatform,
+  About: AboutPage,
+  Settings: SettingsPanel,
 };
 
 function antdTokens(t: ThemeTokens, fontCss: string, baseSize: number) {
@@ -51,8 +52,6 @@ function antdTokens(t: ThemeTokens, fontCss: string, baseSize: number) {
     boxShadowSecondary: 'var(--shadow-lg)',
   };
 }
-
-
 
 function AppInner() {
   const [page, setPage] = useState('Status');
@@ -94,25 +93,24 @@ function AppInner() {
     root.style.setProperty("--text-secondary", cur.colorTextSecondary);
     root.style.setProperty("--text-tertiary", cur.colorTextTertiary);
     root.style.setProperty("--text-muted", isDark ? "rgba(255,255,255,0.22)" : "rgba(0,0,0,0.22)");
-
     root.style.setProperty("--card-bg", cur.colorBgContainer + "99");
     root.style.setProperty("--config-row-bg", isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)");
     root.style.setProperty("--config-row-hover", isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.05)");
-
     root.style.setProperty("--border-subtle", cur.colorBorderSecondary);
     root.style.setProperty("--border-subtler", isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)");
-
     root.style.setProperty("--shadow-sm", isDark ? "0 1px 4px rgba(0,0,0,0.20)" : "0 1px 4px rgba(0,0,0,0.08)");
     root.style.setProperty("--shadow-md", isDark ? "0 4px 20px rgba(0,0,0,0.28)" : "0 4px 20px rgba(0,0,0,0.10)");
     root.style.setProperty("--shadow-hover", isDark ? "0 4px 24px rgba(0,0,0,0.32)" : "0 4px 24px rgba(0,0,0,0.12)");
+    root.style.setProperty("--bg-primary", cur.colorPrimary);
+    root.style.setProperty("--accent-bg", `${cur.colorPrimary}1a`);
+    root.style.setProperty("--accent-border", cur.colorPrimary);
+    root.style.setProperty("--accent-hover", cur.colorPrimaryHover);
+    root.style.setProperty("--font-size-base", `${baseFontSize}px`);
+    root.style.setProperty("--font-family-custom", fontFamilyCss || 'inherit');
+  }, [cur, isDark, baseFontSize, fontFamilyCss]);
 
-    root.style.setProperty("--accent-border", cur.colorPrimary + "55");
-    root.style.setProperty("--accent-bg", cur.colorPrimaryBg);
-    root.style.setProperty("--accent-ring", cur.colorPrimary + "33");
-  }, [themeStyle, themeMode]);
-  // ponytail: font-scale & font-family applied via data attributes / CSS vars in appearance/store
-  const darkToken = antdTokens(tokens.dark, fontFamilyCss, baseFontSize);
-  const lightToken = antdTokens(tokens.light, fontFamilyCss, baseFontSize);
+  const menuSelectedBg = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)';
+
 
   const sidebarBg = isDark ? tokens.dark.colorBgContainer : tokens.light.colorBgContainer;
   const sidebarBorder = isDark ? tokens.dark.colorBorderSecondary : tokens.light.colorBorderSecondary;
@@ -121,59 +119,29 @@ function AppInner() {
   const layoutBg = isDark ? tokens.dark.colorBgLayout : tokens.light.colorBgLayout;
   const dotColor = status?.enabled ? tokens.dark.colorSuccess : tokens.dark.colorTextTertiary;
 
+
   return (
     <ConfigProvider
       theme={{
-        algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
-        token: isDark ? darkToken : lightToken,
+        algorithm: resolveDark() ? theme.darkAlgorithm : theme.defaultAlgorithm,
+        token: antdTokens(cur, fontFamilyCss, baseFontSize),
         components: {
-          Menu: {
-            itemBg: 'transparent',
-            itemBorderRadius: 6,
-            itemMarginInline: 4,
-            itemHeight: 38,
-            itemColor: isDark ? tokens.dark.colorTextSecondary : tokens.light.colorTextSecondary,
-            itemHoverColor: isDark ? tokens.dark.colorText : tokens.light.colorText,
-            itemSelectedColor: isDark ? tokens.dark.colorText : tokens.light.colorText,
-            itemActiveBg: 'transparent',
-            subMenuItemBg: 'transparent',
-          },
-          Card: { paddingLG: 20, colorBorderSecondary: isDark ? tokens.dark.colorBorderSecondary : tokens.light.colorBorderSecondary },
-          Tabs: { horizontalMargin: '0 0 16px 0', colorBorderSecondary: isDark ? tokens.dark.colorBorderSecondary : tokens.light.colorBorderSecondary },
-          Button: { controlHeight: 34, borderRadius: 8, borderRadiusLG: 8, primaryShadow: 'none' },
-          Input: { controlHeight: 36, borderRadius: 8, colorBgContainer: isDark ? tokens.dark.colorBgContainer : tokens.light.colorBgContainer },
-          Select: { controlHeight: 36, borderRadius: 8 },
-          Table: { headerBg: 'transparent', headerColor: isDark ? tokens.dark.colorTextTertiary : tokens.light.colorTextTertiary, borderColor: isDark ? tokens.dark.colorBorderSecondary : tokens.light.colorBorderSecondary },
-          Switch: { trackHeight: 22 },
-          Tag: { borderRadius: 6 },
+          Layout: { headerBg, siderBg: 'transparent', bodyBg: 'transparent', triggerBg: cur.colorBgElevated },
+          Menu: { itemBg: 'transparent', itemSelectedBg: menuSelectedBg, itemHoverBg: menuSelectedBg, itemBorderRadius: 8, itemMarginBlock: 2, itemMarginInline: 4 },
+          Card: { paddingLG: 20, borderRadiusLG: 12 },
+          Button: { borderRadius: 8, borderRadiusLG: 10 },
+          Modal: { contentBg: cur.colorBgElevated, headerBg: cur.colorBgElevated },
+          Select: { optionSelectedBg: menuSelectedBg },
         },
       }}
     >
       <Layout style={{ height: '100vh', background: layoutBg }}>
-        <Sider width={220} theme="dark" style={{
-          borderRight: `1px solid ${sidebarBorder}`,
+        <Sider width={180} style={{ borderRight: `1px solid ${sidebarBorder}`,
           background: sidebarBg,
-          display: 'flex', flexDirection: 'column',
-        }}>
-          <div style={{
-            padding: '20px 16px 16px',
-            borderBottom: `1px solid ${isDark ? tokens.dark.colorBorderSecondary : tokens.light.colorBorderSecondary}`,
-          }}>
-            <Space>
-              <div style={{
-                width: 36, height: 36, borderRadius: 8,
-                display: 'grid', placeItems: 'center',
-                overflow: 'hidden',
-              }}>
-                <img src={logoImg} alt="IronLink" style={{ width: 36, height: 36, objectFit: 'contain', borderRadius: 8 }} />
-              </div>
-              <div>
-                <Typography.Text strong style={{ fontSize: 14, lineHeight: 1.2, display: 'block', color: isDark ? tokens.dark.colorText : tokens.light.colorText }}>
-                  IronLink
-                </Typography.Text>
-                <Typography.Text style={{ fontSize: 11, color: isDark ? tokens.dark.colorTextTertiary : tokens.light.colorTextTertiary, lineHeight: 1.2 }}>v0.1.0</Typography.Text>
-              </div>
-            </Space>
+          display: 'flex', flexDirection: 'column', }}>
+          <div style={{ padding: '14px 14px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <img src={logoImg} alt="" style={{ width: 26, height: 26, borderRadius: 7 }} />
+            <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.3px' }}>IronLink</span>
           </div>
 
           <Menu

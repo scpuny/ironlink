@@ -79,7 +79,7 @@ export function fetchLogs(): Promise<string[]> {
   return tauriInvoke<string[]>('get_logs');
 }
 
-// ── Relay Profiles ──
+// ── Providers (upstream relay profiles) ──
 
 export type RelayProfileData = {
   id: string;
@@ -107,6 +107,24 @@ export function activateProfile(id: string): Promise<void> {
   return tauriInvoke<void>('activate_profile', { id });
 }
 
+// ── Applications (downstream apps like Codex, Claude) ──
+
+export type AppData = {
+  id: string;
+  name: string;
+  protocol: string;
+  enabled: boolean;
+  model_mappings: Record<string, { provider_id: string; upstream_model: string }>;
+};
+
+export function fetchApps(): Promise<AppData[]> {
+  return tauriInvoke<AppData[]>('get_apps');
+}
+
+export function saveApps(apps: AppData[]): Promise<void> {
+  return tauriInvoke<void>('save_apps', { apps });
+}
+
 // ── Proxy Config ──
 
 export function fetchProxyConfig(): Promise<import("../types").ProxyConfig> {
@@ -121,20 +139,4 @@ export function fetchUpstreamModels(url: string, apiKey: string): Promise<string
   return tauriInvoke<string[]>('fetch_upstream_models', { url, apiKey }).catch(e => {
     throw new Error(typeof e === 'string' ? e : e?.message || String(e));
   });
-}
-
-// ── Model Mappings ──
-
-export type ModelMapping = {
-  codex_model: string;
-  upstream_model: string;
-  profile_id: string;
-};
-
-export function fetchModelMappings(): Promise<ModelMapping[]> {
-  return tauriInvoke<ModelMapping[]>('get_model_mappings');
-}
-
-export function saveModelMappings(mappings: ModelMapping[]): Promise<void> {
-  return tauriInvoke<void>('save_model_mappings', { mappings });
 }
