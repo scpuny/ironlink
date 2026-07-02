@@ -552,3 +552,122 @@ fn split_think_block(text: &str) -> Option<(String, String)> {
     let answer_start = close_start + THINK_CLOSE.len();
     Some((text[body_start..close_start].trim().to_string(), text[answer_start..].trim_start_matches(['\r','\n','\t',' ']).to_string()))
 }
+
+
+// ── Tests ──
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::core::traits::SseTransform;
+
+    fn chat_chunk(text: &str) -> Vec<u8> {
+        let data = serde_json::json!({
+            "choices": [{"delta": {"content": text}, "index": 0}]
+        });
+        format!("data: {}
+
+", serde_json::to_string(&data).unwrap()).into_bytes()
+    }
+
+    fn chat_reasoning_chunk(text: &str) -> Vec<u8> {
+        let data = serde_json::json!({
+            "choices": [{"delta": {"reasoning_content": text, "content": ""}, "index": 0}]
+        });
+        format!("data: {}
+
+", serde_json::to_string(&data).unwrap()).into_bytes()
+    }
+
+    fn chat_tool_chunk(id: &str, name: &str, args: &str) -> Vec<u8> {
+        let mut delta = serde_json::json!({});
+        if !id.is_empty() {
+            delta["tool_calls"] = serde_json::json!([{
+                "index": 0, "id": id, "type": "function",
+                "function": {"name": name, "arguments": args}
+            }]);
+        } else {
+            delta["tool_calls"] = serde_json::json!([{
+                "index": 0, "function": {"arguments": args}
+            }]);
+        }
+        let data = serde_json::json!({"choices": [{"delta": delta, "index": 0}]});
+        format!("data: {}
+
+", serde_json::to_string(&data).unwrap()).into_bytes()
+    }
+
+    fn chat_usage_chunk() -> Vec<u8> {
+        let data = serde_json::json!({
+            "choices": [{"delta": {}, "index": 0, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+        });
+        format!("data: {}
+
+", serde_json::to_string(&data).unwrap()).into_bytes()
+    }
+
+    #[test]
+    fn test_chat_sse_basic_text() {
+        let mut conv = ChatSseConverter::default();
+        let out = conv.push_bytes(&chat_chunk("Hello"));
+        let out2 = conv.push_bytes(&chat_chunk(" world!"));
+        let done = conv.finish();
+        let combined = [out, out2, done].concat();
+        let all = String::from_utf8_lossy(&combined);
+        assert!(all.contains("response.output_text.delta"));
+        assert!(all.contains("response.completed"));
+    }
+
+    #[test]
+    fn test_chat_sse_reasoning() {
+        let mut conv = ChatSseConverter::default();
+        let out = conv.push_bytes(&chat_reasoning_chunk("Let me think..."));
+        let out2 = conv.push_bytes(&chat_chunk("Answer is 42."));
+        let done = conv.finish();
+        let combined = [out, out2, done].concat();
+        let all = String::from_utf8_lossy(&combined);
+        assert!(all.contains("reasoning_summary_text.delta"));
+        assert!(all.contains("response.output_text.delta"));
+    }
+
+    #[test]
+    fn test_chat_sse_tool_calls() {
+        let mut conv = ChatSseConverter::default();
+        let out = conv.push_bytes(&chat_tool_chunk("call_1", "get_weather", r#"{"loc"#));
+        let out2 = conv.push_bytes(&chat_tool_chunk("", "", r#""ation": "Beijing"}"#));
+        let done = conv.finish();
+        let combined = [out, out2, done].concat();
+        let all = String::from_utf8_lossy(&combined);
+        assert!(all.contains("function_call_arguments.delta"));
+    }
+
+    #[test]
+    fn test_chat_sse_error_event() {
+        let mut conv = ChatSseConverter::default();
+        let failed = conv.fail("Rate limit exceeded".into(), Some("rate_limit_error".into()));
+        let text = String::from_utf8_lossy(&failed);
+        assert!(text.contains("response.failed"));
+    }
+
+
+
+    #[test]
+    fn test_chat_sse_empty_input() {
+        let mut conv = ChatSseConverter::default();
+        let out = conv.push_bytes(b"");
+        assert!(out.is_empty());
+        let done = conv.finish();
+        assert!(String::from_utf8_lossy(&done).contains("completed"));
+    }
+
+    #[test]
+    fn test_chat_sse_usage_in_final() {
+        let mut conv = ChatSseConverter::default();
+        let _ = conv.push_bytes(&chat_chunk("Hello"));
+        let _ = conv.push_bytes(&chat_usage_chunk());
+        let done = conv.finish();
+        let text = String::from_utf8_lossy(&done);
+        assert!(text.contains("input_tokens"));
+    }
+}

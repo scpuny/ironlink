@@ -104,8 +104,24 @@ impl OutputProtocol for ChatOutput {
             }
         }
 
-        for (key, value) in &req.extra_fields {
-            result[key] = value.clone();
+        // Explicitly forward known-safe passthrough fields
+        if let Some(ref user) = req.passthrough.user {
+            result["user"] = Value::String(user.clone());
+        }
+        if let Some(seed) = req.passthrough.seed {
+            result["seed"] = Value::Number(serde_json::Number::from(seed));
+        }
+        if let Some(ref stop) = req.passthrough.stop {
+            result["stop"] = stop.clone();
+        }
+        if let Some(ref rf) = req.passthrough.response_format {
+            result["response_format"] = rf.clone();
+        }
+        if let Some(fp) = req.passthrough.frequency_penalty {
+            result["frequency_penalty"] = Value::Number(serde_json::Number::from_f64(fp as f64).unwrap());
+        }
+        if let Some(pp) = req.passthrough.presence_penalty {
+            result["presence_penalty"] = Value::Number(serde_json::Number::from_f64(pp as f64).unwrap());
         }
 
         Ok(result)

@@ -121,7 +121,29 @@ pub struct ProtocolRequest {
     pub stream: bool,
     pub stream_options: Option<Value>,
     pub metadata: Option<Value>,
-    pub extra_fields: Vec<(String, Value)>,
+    /// Safe passthrough fields forwarded to upstream if the protocol supports them.
+    /// Only fields known to be universally safe (user, seed, stop, response_format, etc.)
+    pub passthrough: PassthroughFields,
+}
+
+/// Fields that are safe to pass through to upstream protocols.
+#[derive(Debug, Clone, Default)]
+pub struct PassthroughFields {
+    /// OpenAI `user` field for end-user identification.
+    pub user: Option<String>,
+    /// OpenAI `seed` for deterministic sampling.
+    pub seed: Option<u64>,
+    /// `stop` sequences.
+    pub stop: Option<Value>,
+    /// `response_format` for structured output.
+    pub response_format: Option<Value>,
+    /// `frequency_penalty` / `presence_penalty`.
+    pub frequency_penalty: Option<f32>,
+    pub presence_penalty: Option<f32>,
+    /// Anthropic `stop_sequences`.
+    pub stop_sequences: Option<Vec<String>>,
+    /// Any other safe fields serialized as JSON.
+    pub other: Vec<(String, Value)>,
 }
 
 // ── Response ──
@@ -178,7 +200,9 @@ pub struct ProtocolResponse {
     pub status: ResponseStatus,
     pub output: Vec<OutputItem>,
     pub usage: Usage,
-    pub extra_fields: Vec<(String, Value)>,
+    /// Safe passthrough fields forwarded to upstream if the protocol supports them.
+    /// Only fields known to be universally safe (user, seed, stop, response_format, etc.)
+    pub passthrough: PassthroughFields,
 }
 
 // ── SSE Event ──

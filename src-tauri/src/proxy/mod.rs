@@ -31,7 +31,7 @@ use crate::protocol;
 use crate::models::*;
 use crate::protocol::SseTransformStream;
 
-pub use self::error::error_response;
+pub use self::error::{error_response, upstream_error_response};
 
 /// GET /v1/models — aggregate models from all enabled apps.
 pub async fn handle_models(
@@ -113,7 +113,16 @@ pub async fn handle_proxy(
 
     let body_val: serde_json::Value =
         if body.is_empty() { serde_json::Value::Null }
-        else { serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null) };
+        else {
+            match serde_json::from_slice(&body) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!("Invalid JSON in request body: {}", e);
+                    return error_response(StatusCode::BAD_REQUEST,
+                        format!("Invalid JSON in request body: {}", e));
+                }
+            }
+        };
 
     // Route: find app by protocol → look up app's model_mappings → select provider
     let (backend_type, base_url, api_key, protocol, mapped_upstream_model) = {
@@ -163,6 +172,8 @@ pub async fn handle_proxy(
 
     let client = reqwest::Client::builder()
         .no_proxy()
+        .timeout(std::time::Duration::from_secs(300))
+        .connect_timeout(std::time::Duration::from_secs(30))
         .build()
         .unwrap();
 
@@ -205,14 +216,11 @@ pub async fn handle_proxy(
 
     if !status.is_success() {
         let bytes = resp.bytes().await.unwrap_or_default();
-        let err_body = String::from_utf8_lossy(&bytes).chars().take(500).collect::<String>();
-        tracing::error!("Upstream returned {}: {} for url={}", status.as_u16(), err_body, url);
+        let err_body_str = String::from_utf8_lossy(&bytes).chars().take(500).collect::<String>();
+        tracing::error!("Upstream returned {}: {} for url={}", status.as_u16(), err_body_str, url);
         crate::config::push_log(&state, format!("x upstream {} {}", status.as_u16(), url)).await;
-        return Response::builder()
-            .status(status)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(bytes))
-            .unwrap();
+        // Convert upstream error to proper Responses API error format
+        return upstream_error_response(status, &bytes);
     }
 
     if is_stream {
@@ -266,18 +274,40 @@ fn convert_response(bytes: &[u8], protocol: &str) -> Vec<u8> {
     match protocol {
         "responses" | "openai-responses" | "openai_responses" => bytes.to_vec(),
         "chat_completions" | "openai-chat" | "chatCompletions" => {
-            serde_json::from_slice::<serde_json::Value>(bytes)
-                .ok()
-                .and_then(|v| protocol::upstream_to_responses(&v, "chat_completions").ok())
-                .and_then(|v| serde_json::to_vec(&v).ok())
-                .unwrap_or_else(|| bytes.to_vec())
+            match serde_json::from_slice::<serde_json::Value>(bytes) {
+                Ok(v) => match protocol::upstream_to_responses(&v, "chat_completions") {
+                    Ok(converted) => serde_json::to_vec(&converted).unwrap_or_else(|_| {
+                        tracing::warn!("Failed to serialize chat response conversion result, using raw bytes");
+                        bytes.to_vec()
+                    }),
+                    Err(e) => {
+                        tracing::warn!("Chat response conversion failed: {}, using raw bytes", e);
+                        bytes.to_vec()
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!("Failed to parse upstream Chat response as JSON: {}, using raw bytes", e);
+                    bytes.to_vec()
+                }
+            }
         }
         "anthropic" => {
-            serde_json::from_slice::<serde_json::Value>(bytes)
-                .ok()
-                .and_then(|v| protocol::upstream_to_responses(&v, "anthropic").ok())
-                .and_then(|v| serde_json::to_vec(&v).ok())
-                .unwrap_or_else(|| bytes.to_vec())
+            match serde_json::from_slice::<serde_json::Value>(bytes) {
+                Ok(v) => match protocol::upstream_to_responses(&v, "anthropic") {
+                    Ok(converted) => serde_json::to_vec(&converted).unwrap_or_else(|_| {
+                        tracing::warn!("Failed to serialize anthropic response conversion result, using raw bytes");
+                        bytes.to_vec()
+                    }),
+                    Err(e) => {
+                        tracing::warn!("Anthropic response conversion failed: {}, using raw bytes", e);
+                        bytes.to_vec()
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!("Failed to parse upstream Anthropic response as JSON: {}, using raw bytes", e);
+                    bytes.to_vec()
+                }
+            }
         }
         _ => bytes.to_vec(),
     }

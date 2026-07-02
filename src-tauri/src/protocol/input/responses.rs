@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 use crate::protocol::core::types::*;
+use crate::protocol::core::types::PassthroughFields;
 use crate::protocol::core::traits::InputProtocol;
 
 /// Parses OpenAI Responses API wire format into canonical ProtocolRequest.
@@ -54,9 +55,19 @@ impl InputProtocol for ResponsesInput {
             top_p: body.get("top_p").and_then(Value::as_f64).map(|v| v as f32),
             stream, stream_options,
             metadata: body.get("metadata").cloned(),
-            extra_fields: collect_extra_fields(body, &["model", "input", "instructions", "tools", "tool_choice",
-                "reasoning", "max_output_tokens", "max_tokens", "temperature", "top_p", "stream", "stream_options",
-                "metadata", "parallel_tool_calls"]),
+            passthrough: PassthroughFields {
+                user: body.get("user").and_then(Value::as_str).map(|s| s.to_string()),
+                seed: body.get("seed").and_then(Value::as_u64),
+                stop: body.get("stop").cloned(),
+                response_format: body.get("response_format").cloned(),
+                frequency_penalty: body.get("frequency_penalty").and_then(Value::as_f64).map(|v| v as f32),
+                presence_penalty: body.get("presence_penalty").and_then(Value::as_f64).map(|v| v as f32),
+                stop_sequences: None,
+                other: collect_extra_fields(body, &["model", "input", "instructions", "tools", "tool_choice",
+                    "reasoning", "max_output_tokens", "max_tokens", "temperature", "top_p", "stream",
+                    "stream_options", "metadata", "parallel_tool_calls", "user", "seed", "stop",
+                    "response_format", "frequency_penalty", "presence_penalty"]),
+            },
         })
     }
 

@@ -63,3 +63,103 @@ pub fn append_utf8_safe(buffer: &mut String, remainder: &mut Vec<u8>, bytes: &[u
 pub fn is_done_block(block: &str) -> bool {
     block.trim() == "[DONE]"
 }
+
+// ── Tests ──
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_sse_event() {
+        let block = "event: message\ndata: {\"hello\": \"world\"}\n\n";
+        let event = parse_sse_block(block);
+        assert!(event.is_some());
+        let e = event.unwrap();
+        assert_eq!(e.event, "message");
+        assert_eq!(e.data, "{\"hello\": \"world\"}");
+    }
+
+    #[test]
+    fn test_parse_sse_event_without_event_field() {
+        let block = "data: hello world\n\n";
+        let event = parse_sse_block(block);
+        assert!(event.is_some());
+        let e = event.unwrap();
+        assert_eq!(e.event, "message"); // default
+        assert_eq!(e.data, "hello world");
+    }
+
+    #[test]
+    fn test_parse_sse_custom_event() {
+        let block = "event: response.completed\ndata: {\"status\": \"done\"}\n\n";
+        let event = parse_sse_block(block);
+        assert!(event.is_some());
+        let e = event.unwrap();
+        assert_eq!(e.event, "response.completed");
+        assert_eq!(e.data, "{\"status\": \"done\"}");
+    }
+
+    #[test]
+    fn test_parse_sse_empty_block() {
+        assert!(parse_sse_block("").is_none());
+        // Just newlines with no event/data fields returns None
+        assert!(parse_sse_block("\n\n").is_none());
+    }
+
+    #[test]
+    fn test_take_sse_block() {
+        let mut buf = String::from("event: test\ndata: value\n\ntrailing");
+        let block = take_sse_block(&mut buf);
+        assert!(block.is_some());
+        assert_eq!(block.unwrap(), "event: test\ndata: value");
+        assert_eq!(buf, "trailing");
+    }
+
+    #[test]
+    fn test_take_sse_block_empty() {
+        let mut buf = String::from("no delimiter here");
+        let block = take_sse_block(&mut buf);
+        assert!(block.is_none());
+        assert_eq!(buf, "no delimiter here");
+    }
+
+    #[test]
+    fn test_take_sse_block_crlf() {
+        let mut buf = String::from("event: test\r\ndata: value\r\n\r\n");
+        let block = take_sse_block(&mut buf);
+        assert!(block.is_some());
+        assert!(block.unwrap().contains("event: test"));
+    }
+
+    #[test]
+    fn test_append_utf8_safe() {
+        let mut buf = String::new();
+        let mut rem = Vec::new();
+        append_utf8_safe(&mut buf, &mut rem, b"hello");
+        assert_eq!(buf, "hello");
+        assert!(rem.is_empty());
+    }
+
+    #[test]
+    fn test_append_utf8_split_char() {
+        let mut buf = String::new();
+        let mut rem = Vec::new();
+        // Send incomplete UTF-8 (first byte of a 2-byte char)
+        append_utf8_safe(&mut buf, &mut rem, &[0xc3]);
+        assert!(buf.is_empty());
+        assert_eq!(rem.len(), 1);
+        // Complete it
+        append_utf8_safe(&mut buf, &mut rem, &[0xa9]);
+        assert_eq!(buf, "\u{00e9}"); // é
+        assert!(rem.is_empty());
+    }
+
+    #[test]
+    fn test_is_done_block() {
+        assert!(is_done_block("[DONE]"));
+        assert!(!is_done_block("data: hello"));
+        assert!(!is_done_block(""));
+    }
+}
+

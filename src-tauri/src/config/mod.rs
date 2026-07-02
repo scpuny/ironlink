@@ -41,10 +41,11 @@ fn write_proxy_enabled_state(_enabled: bool) -> anyhow::Result<()> {
 pub fn auto_restore_codex_configs_if_needed() {
     let proxy_url = format!("http://127.0.0.1:{}/v1", proxy_port());
     let codex_config = read_codex_config();
-    let bak_path = ironlink_dir().join("codex-config.bak");
+    let bak_path = app_codex_bak_path();
     if codex_config.contains(&proxy_url) && bak_path.exists() {
         info!("Startup: Codex config has stale proxy URL, restoring from backup");
-        restore_codex_configs();
+        let _ = std::fs::copy(&bak_path, &codex_config_path(None));
+        info!("Codex config restored from backup");
     }
 }
 
@@ -144,7 +145,7 @@ pub fn toggle_proxy(enabled: bool, default_model: &str, reasoning_effort: &str,
             let codex_path = codex_config_path(None);
             if codex_path.exists() {
                 let original = std::fs::read_to_string(&codex_path).unwrap_or_default();
-                let bak_path = ironlink_dir().join("codex-config.bak");
+                let bak_path = app_codex_bak_path();
                 if let Some(parent) = bak_path.parent() { let _ = std::fs::create_dir_all(parent); }
                 let _ = std::fs::write(&bak_path, &original);
                 let _ = write_proxy_config(&original, default_model, reasoning_effort, profiles);
@@ -181,7 +182,7 @@ pub fn restore_app_config(inj: &crate::models::AppInjection) {
 
 pub fn restore_codex_configs() {
     let codex_path = codex_config_path(None);
-    let bak_path = ironlink_dir().join("codex-config.bak");
+    let bak_path = app_codex_bak_path();
     if bak_path.exists() {
         if let Err(e) = std::fs::copy(&bak_path, &codex_path) {
             warn!("Failed to restore Codex config from backup: {e}");
@@ -199,9 +200,10 @@ fn codex_config_path(override_dir: Option<&str>) -> PathBuf {
     }
 }
 
-fn _codex_config_bak_path() -> PathBuf {
-    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| "/tmp".into());
-    PathBuf::from(home).join(".ironlink").join("codex-config.bak")
+/// Unified backup path for Codex config (consistent with app_config_bak_path for codex_toml).
+/// Uses ~/.ironlink/codex_toml.bak to match the per-app backup naming.
+fn app_codex_bak_path() -> PathBuf {
+    ironlink_dir().join("codex_toml.bak")
 }
 
 pub fn read_codex_config() -> String {

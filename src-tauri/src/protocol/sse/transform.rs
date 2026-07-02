@@ -8,9 +8,9 @@ use crate::protocol::core::traits::SseTransform;
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
 
-use crate::protocol::sse::anthropic_sse;
+use crate::protocol::sse::anthropic_sse::AnthropicSseConverter;
 use crate::protocol::sse::chat_sse::ChatSseConverter;
-use crate::protocol::sse::parser::{append_utf8_safe, take_sse_block};
+use crate::protocol::sse::parser::{append_utf8_safe, take_sse_block, is_done_block};
 
 /// Wraps an upstream SSE byte stream and transforms events
 /// from the upstream wire protocol to the Responses API SSE format.
@@ -19,20 +19,11 @@ pub struct SseTransformStream<S> {
     mode: Mode,
     buffer: Vec<u8>,
     finished: bool,
-    #[allow(dead_code)]
-    converted: bool,
 }
 
 enum Mode {
     Chat(ChatSseConverter),
-    #[allow(dead_code)]
-    Anthropic {
-        buffer: String,
-        remainder: Vec<u8>,
-        response_started: bool,
-        response_id: String,
-        finalized: bool,
-    },
+    Anthropic(AnthropicSseConverter),
 }
 
 impl<S> SseTransformStream<S> {
@@ -43,29 +34,10 @@ impl<S> SseTransformStream<S> {
             mode: if is_chat {
                 Mode::Chat(ChatSseConverter::default())
             } else {
-                Mode::Anthropic {
-                    buffer: String::new(),
-                    remainder: Vec::new(),
-                    response_started: false,
-                    response_id: String::new(),
-                    finalized: false,
-                }
+                Mode::Anthropic(AnthropicSseConverter::default())
             },
             buffer: Vec::new(),
             finished: false,
-            converted: false,
-        }
-    }
-
-    /// Create a Chat SSE converter with the original request for field passthrough.
-    #[allow(dead_code)]
-    pub fn with_request(inner: S, _original_request: serde_json::Value) -> Self {
-        Self {
-            inner,
-            mode: Mode::Chat(ChatSseConverter::default()),
-            buffer: Vec::new(),
-            finished: false,
-            converted: false,
         }
     }
 }
@@ -104,24 +76,51 @@ impl<S: Stream<Item = io::Result<Bytes>> + Unpin> Stream for SseTransformStream<
                     Poll::Pending => Poll::Pending,
                 }
             }
-            Mode::Anthropic { buffer, remainder, finalized, .. } => {
-                if *finalized {
-                    this.finished = true;
-                    return Poll::Ready(None);
-                }
+            Mode::Anthropic(converter) => {
                 match inner.poll_next_unpin(cx) {
                     Poll::Ready(Some(Ok(chunk))) => {
-                        append_utf8_safe(buffer, remainder, &chunk);
+                        let mut buf = String::new();
+                        let mut rem = Vec::new();
+                        append_utf8_safe(&mut buf, &mut rem, &chunk);
                         let mut output = String::new();
-                        while let Some(block) = take_sse_block(buffer) {
+                        while let Some(block) = take_sse_block(&mut buf) {
                             if block.trim().is_empty() { continue; }
-                            output.push_str(&anthropic_sse::transform_anthropic_chunk(&format!("{}\n\n", block)));
+                            if is_done_block(&block) {
+                                output.push_str(&converter.finish());
+                                this.finished = true;
+                                return if output.is_empty() { Poll::Ready(None) } else { Poll::Ready(Some(Ok(Bytes::from(output)))) };
+                            }
+                            let block_str = block.to_string();
+                            let converted = converter.push_block(&format!("{}\n\n", block_str));
+                            if converted.is_empty() && !block_str.contains("message_start")
+                                && !block_str.contains("content_block")
+                                && !block_str.contains("ping")
+                            {
+                                let event_name = block_str.lines()
+                                    .find(|l| l.starts_with("event:"))
+                                    .map(|l| l["event:".len()..].trim())
+                                    .unwrap_or("");
+                                if event_name == "error" || event_name.contains("error") {
+                                    let err_msg = block_str.lines()
+                                        .find(|l| l.starts_with("data:"))
+                                        .map(|l| l["data:".len()..].trim())
+                                        .unwrap_or("Unknown upstream error");
+                                    output.push_str(&converter.fail(err_msg.to_string(), Some("upstream_error".into())));
+                                    this.finished = true;
+                                    break;
+                                }
+                            }
+                            output.push_str(&converted);
                         }
                         if !output.is_empty() { Poll::Ready(Some(Ok(Bytes::from(output)))) }
                         else { cx.waker().wake_by_ref(); Poll::Pending }
                     }
-                    Poll::Ready(Some(Err(e))) => { *finalized = true; Poll::Ready(Some(Err(e))) }
-                    Poll::Ready(None) => { *finalized = true; Poll::Ready(None) }
+                    Poll::Ready(Some(Err(e))) => { this.finished = true; Poll::Ready(Some(Err(e))) }
+                    Poll::Ready(None) => {
+                        let out = converter.finish();
+                        this.finished = true;
+                        if !out.is_empty() { Poll::Ready(Some(Ok(Bytes::from(out)))) } else { Poll::Ready(None) }
+                    }
                     Poll::Pending => Poll::Pending,
                 }
             }

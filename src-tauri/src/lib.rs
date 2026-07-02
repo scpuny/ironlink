@@ -16,6 +16,7 @@ use axum::{
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
+use tauri::Manager;
 use crate::config::AppState;
 
 /// Start the Axum proxy server on the port from settings.
@@ -141,6 +142,39 @@ pub fn run() {
             info!("Tauri UI started (proxy server starts on demand)");
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                tracing::info!("App exiting: cleaning up and restoring all configs");
+
+                // Spawn cleanup; the runtime is still alive during Exit
+                let h = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let state: tauri::State<'_, Arc<AppState>> = h.state::<Arc<AppState>>();
+                    let s = state.inner().clone();
+
+                    // ── 1. Stop proxy if running ──
+                    let enabled = *s.proxy_enabled.lock().await;
+                    if enabled {
+                        tracing::info!("Stopping proxy server...");
+                        crate::stop_proxy_server(s.clone()).await;
+                    }
+
+                    // ── 2. Restore ALL backed-up app configs (not just when proxy was on) ──
+                    let apps = s.apps.lock().await.clone();
+                    for app in apps.iter().filter(|a| a.config_injection.is_some()) {
+                        if let Some(inj) = &app.config_injection {
+                            if inj.backup_enabled {
+                                crate::config::restore_app_config(inj);
+                            }
+                        }
+                    }
+                    // Legacy fallback
+                    crate::config::restore_codex_configs();
+
+                    tracing::info!("Cleanup complete on exit");
+                });
+            }
+        });
 }
