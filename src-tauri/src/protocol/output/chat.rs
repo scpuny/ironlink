@@ -92,8 +92,20 @@ impl OutputProtocol for ChatOutput {
         apply_reasoning_options(&mut result, req);
 
         if !req.tools.is_empty() {
-            let chat_tools: Vec<Value> = req.tools.iter().map(build_chat_tool).collect();
-            result["tools"] = Value::Array(chat_tools);
+            let codex_builtins = [
+                "multi_agent_v1", "sub_agent", "subagents",
+                "codex.bash", "codex.terminals",
+            ];
+            let chat_tools: Vec<Value> = req.tools.iter()
+                .filter(|t| !codex_builtins.contains(&t.name.as_str()))
+                .map(build_chat_tool)
+                .collect();
+            if !chat_tools.is_empty() {
+                result["tools"] = Value::Array(chat_tools);
+            } else {
+                // Remove tools field entirely if all were filtered
+                result.as_object_mut().map(|m| m.remove("tools"));
+            }
         }
         if let Some(ref tc) = req.tool_choice {
             result["tool_choice"] = tc.clone();
