@@ -218,11 +218,13 @@ fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &st
     doc["model"] = toml_edit::value(default_model);
     doc["reasoning_effort"] = toml_edit::value(reasoning_effort);
 
-    // Write model catalog JSON file and reference it
-    let catalog_path = ironlink_dir().join("ironlink-model-catalog.json");
+    // Write model catalog to Codex config dir so relative path resolves correctly
+    let catalog_path = model_catalog_path();
     write_ironlink_model_catalog(&catalog_path, profiles)?;
     doc["model_catalog_json"] = toml_edit::value("ironlink-model-catalog.json");
 
+    // Set active model_provider and [model_providers.ironlink] table
+    doc["model_provider"] = toml_edit::value("ironlink");
     // [model_providers.ironlink] table
     let ironlink_table = doc["model_providers"]["ironlink"]
         .or_insert(toml_edit::table());
@@ -305,9 +307,13 @@ fn write_app_proxy_config(original: &str, default_model: &str, reasoning_effort:
             if wants("reasoning_effort") { doc["reasoning_effort"] = toml_edit::value(reasoning_effort); }
 
             if wants("model_catalog_json") {
-                let catalog_path = ironlink_dir().join("ironlink-model-catalog.json");
+                let catalog_path = model_catalog_path();
                 write_ironlink_model_catalog(&catalog_path, profiles)?;
                 doc["model_catalog_json"] = toml_edit::value("ironlink-model-catalog.json");
+            }
+
+            if wants("model_provider") {
+                doc["model_provider"] = toml_edit::value("ironlink");
             }
 
             if wants("model_providers") {
@@ -382,6 +388,9 @@ pub fn preview_app_config(original: &str, default_model: &str, reasoning_effort:
             if wants("model_catalog_json") {
                 doc["model_catalog_json"] = toml_edit::value("ironlink-model-catalog.json");
             }
+            if wants("model_provider") {
+                doc["model_provider"] = toml_edit::value("ironlink");
+            }
             if wants("model_providers") {
                 doc["model_providers"]["ironlink"]["name"] = toml_edit::value("IronLink");
                 doc["model_providers"]["ironlink"]["base_url"] = toml_edit::value(&proxy_url);
@@ -454,6 +463,17 @@ pub fn write_ironlink_model_catalog(path: &std::path::Path, profiles: &[crate::m
 pub fn ironlink_dir() -> std::path::PathBuf {
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| "/tmp".into());
     std::path::PathBuf::from(home).join(".ironlink")
+}
+
+/// Path to the Codex config directory (~/.codex).
+pub fn codex_config_dir() -> std::path::PathBuf {
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| "/tmp".into());
+    std::path::PathBuf::from(home).join(".codex")
+}
+
+/// Path to the ironlink model catalog JSON (stored in Codex config dir so relative path resolves).
+pub fn model_catalog_path() -> std::path::PathBuf {
+    codex_config_dir().join("ironlink-model-catalog.json")
 }
 
 pub fn read_raw() -> String {
