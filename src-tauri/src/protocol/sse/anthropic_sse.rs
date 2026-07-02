@@ -7,7 +7,7 @@ use crate::protocol::sse::parser::parse_sse_block;
 pub fn transform_anthropic_chunk(chunk: &str) -> String {
     let mut output = String::new();
     let mut buffer = chunk.to_string();
-    let mut remainder: Vec<u8> = Vec::new();
+    let _remainder: Vec<u8> = Vec::new();
 
     while let Some(block) = {
         let lf = buffer.find("\n\n").map(|i| (i, 2));

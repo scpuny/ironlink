@@ -116,6 +116,9 @@ export function activateProfile(id: string): Promise<void> {
 export type AppInjection = {
   config_type: string;
   config_path: string;
+  config_dir?: string;
+  backup_enabled: boolean;
+  fields?: string[];
 };
 
 export type AppData = {
@@ -127,6 +130,7 @@ export type AppData = {
   models: string[];
   config_injection: AppInjection | null;
   model_mappings: Record<string, { provider_id: string; upstream_model: string }>;
+  config_snippet?: string;
 };
 
 export function fetchApps(): Promise<AppData[]> {
@@ -153,3 +157,49 @@ export function fetchUpstreamModels(url: string, apiKey: string): Promise<string
   });
 }
 
+
+// ── Config Preview ──
+
+export interface ConfigFileEntry {
+  name: string;
+  path: string;
+  content: string;
+}
+
+export function getAppConfigFiles(appId: string): Promise<ConfigFileEntry[]> {
+  return tauriInvoke<ConfigFileEntry[]>('get_app_config_files', { appId });
+}
+
+export function previewAppConfig(appId: string): Promise<string> {
+  return tauriInvoke<string>('preview_app_config', { appId });
+}
+
+// ── Model Catalog ──
+
+export function getModelCatalog(): Promise<string> {
+  return tauriInvoke<string>('get_model_catalog');
+}
+
+export function regenerateModelCatalog(): Promise<void> {
+  return tauriInvoke<void>('regenerate_model_catalog');
+}
+
+// ── System Settings ──
+
+export function fetchSettings(): Promise<import("../types").AppSettings> {
+  return tauriInvoke<import("../types").AppSettings>('get_settings');
+}
+
+export function saveSettings(s: import("../types").AppSettings): Promise<void> {
+  return tauriInvoke<void>('save_settings', { s });
+}
+
+// ── Config Export / Import ──
+
+export function exportConfig(): Promise<string> {
+  return tauriInvoke<string>('export_config');
+}
+
+export function importConfig(json: string): Promise<string> {
+  return tauriInvoke<string>('import_config', { json });
+}

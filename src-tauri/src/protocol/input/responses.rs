@@ -60,7 +60,7 @@ impl InputProtocol for ResponsesInput {
         })
     }
 
-    fn parse_response(&self, body: &Value) -> anyhow::Result<ProtocolResponse> {
+    fn parse_response(&self, _body: &Value) -> anyhow::Result<ProtocolResponse> {
         unimplemented!("Responses input only used for request conversion; response passthrough is direct")
     }
 }

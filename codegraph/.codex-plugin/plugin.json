@@ -1,0 +1,20 @@
+{
+  "name": "codegraph",
+  "version": "0.1.0+codex.20260702005856",
+  "description": "IronLink \u534f\u8bae\u8def\u7531\u4ee3\u7406 \u2014 \u9879\u76ee\u67b6\u6784\u8ba4\u77e5\u3001\u6a21\u5757\u7d22\u5f15\u4e0e\u5f00\u53d1\u89c4\u8303",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codegraph",
+    "shortDescription": "IronLink \u5b8c\u6574\u9879\u76ee\u8ba4\u77e5",
+    "longDescription": "\u5305\u542b IronLink \u7684 Rust/Frontend \u67b6\u6784\u3001\u6570\u636e\u7ed3\u6784\u3001\u8def\u7531\u6d41\u7a0b\u3001\u6301\u4e45\u5316\u914d\u7f6e\u3001\u5f00\u53d1\u89c4\u8303\u7b49\u5b8c\u6574\u4e0a\u4e0b\u6587\u3002\u5728\u6b64\u9879\u76ee\u76ee\u5f55\u4e0b\u5de5\u4f5c\u65f6 Codex \u81ea\u52a8\u52a0\u8f7d\uff0c\u65e0\u9700\u91cd\u590d\u9605\u8bfb\u6e90\u7801\u3002",
+    "developerName": "Local developer",
+    "category": "Developer Tools",
+    "capabilities": [
+      "project-understanding"
+    ],
+    "defaultPrompt": "Help me use Codegraph."
+  }
+}

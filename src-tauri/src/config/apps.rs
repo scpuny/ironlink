@@ -4,7 +4,7 @@
 //! Each app bundles its protocol, models, mappings, and config injection info.
 
 use std::path::PathBuf;
-use crate::models::{AppConfig, AppInjection, MappingTarget};
+use crate::models::{AppConfig, AppInjection};
 
 fn apps_path() -> PathBuf {
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| "/tmp".into());
@@ -48,8 +48,12 @@ fn default_apps() -> Vec<AppConfig> {
                     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
                     format!("{}/.codex/config.toml", home)
                 },
+                config_dir: None,
+                backup_enabled: true,
+                fields: None,
             }),
             model_mappings: std::collections::HashMap::new(),
+            config_snippet: None,
         },
         AppConfig {
             id: "claude-desktop".into(),
@@ -62,6 +66,7 @@ fn default_apps() -> Vec<AppConfig> {
             ],
             config_injection: None,
             model_mappings: std::collections::HashMap::new(),
+            config_snippet: None,
         },
     ]
 }

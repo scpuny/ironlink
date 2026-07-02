@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Button, Typography, Tag, message as antMsg, Switch, Select, Divider, Space, Modal } from 'antd';
-import { SettingOutlined, CodeOutlined, EditOutlined, CloseOutlined, ArrowLeftOutlined, CheckOutlined, ArrowRightOutlined } from '@ant-design/icons';
+import { Button, Typography, Tag, message as antMsg, Switch, Select, Divider, Space, Modal, Tabs } from 'antd';
+import { SettingOutlined, CodeOutlined, EditOutlined, CloseOutlined, ArrowLeftOutlined, CheckOutlined, ArrowRightOutlined, FolderOpenOutlined, FileTextOutlined } from '@ant-design/icons';
 import { EditorView, basicSetup } from 'codemirror';
 import { EditorState } from '@codemirror/state';
 import { StreamLanguage } from '@codemirror/language';
@@ -8,8 +8,8 @@ import { toml } from '@codemirror/legacy-modes/mode/toml';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useApps, useProfiles, useProxyConfig } from '../../hooks/useApi';
 import { useI18n } from '../../i18n';
-import { saveApps, setProxyConfig, toggleProxy, getAutoStart, fetchCodexConfigFile, readFileContent } from '../../api';
-import type { AppData } from '../../api';
+import { saveApps, setProxyConfig, toggleProxy, getAutoStart, fetchCodexConfigFile, previewAppConfig, getAppConfigFiles } from '../../api';
+import type { AppData, ConfigFileEntry } from '../../api';
 
 const { Text, Title } = Typography;
 const CODEX_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2'];
@@ -53,17 +53,38 @@ export default function Applications() {
   const [configModalContent, setConfigModalContent] = useState('');
   const [configModalTitle, setConfigModalTitle] = useState('');
   const [configModalLoading, setConfigModalLoading] = useState(false);
+  const [configFiles, setConfigFiles] = useState<ConfigFileEntry[]>([]);
+  const [configFileTab, setConfigFileTab] = useState('0');
 
   const openConfigModal = async (app: AppData) => {
-    if (!app.config_injection?.config_path) { antMsg.warning('No config path configured'); return; }
-    setConfigModalTitle(app.name + ' - ' + app.config_injection.config_path);
+    setConfigModalTitle(app.name + ' - ' + t('preview_config'));
     setConfigModalOpen(true);
     setConfigModalLoading(true);
     try {
-      const text = await readFileContent(app.config_injection.config_path);
-      setConfigModalContent(text || '// ' + 'File is empty or not found');
+      const text = await previewAppConfig(app.id);
+      setConfigModalContent(text || '// ' + 'No preview content');
     } catch (e: any) {
-      setConfigModalContent('// Error reading file: ' + (e?.message || String(e)));
+      setConfigModalContent('// Error generating preview: ' + (e?.message || String(e)));
+    }
+    setConfigModalLoading(false);
+  };
+
+  const openViewConfigModal = async (app: AppData) => {
+    setConfigModalTitle(app.name + ' - ' + t('current_config'));
+    setConfigModalOpen(true);
+    setConfigModalLoading(true);
+    setConfigFileTab('0');
+    try {
+      const files = await getAppConfigFiles(app.id);
+      setConfigFiles(files.length > 0 ? files : [{ name: t('config_file_empty'), path: '', content: '// ' + t('config_file_empty') }]);
+      if (files.length > 0) {
+        setConfigModalContent(files[0].content);
+      } else {
+        setConfigModalContent('// ' + t('config_file_empty'));
+      }
+    } catch (e: any) {
+      setConfigFiles([{ name: 'Error', path: '', content: '// ' + t('error_reading_config') + ': ' + (e?.message || String(e)) }]);
+      setConfigModalContent('// ' + t('error_reading_config') + ': ' + (e?.message || String(e)));
     }
     setConfigModalLoading(false);
   };
@@ -92,7 +113,7 @@ export default function Applications() {
   };
 
   const startEdit = (app: AppData) => {
-    setDraft({ ...app, model_mappings: { ...app.model_mappings } });
+    setDraft({ ...app, config_injection: app.config_injection ? { ...app.config_injection, config_dir: app.config_injection.config_dir, backup_enabled: app.config_injection.backup_enabled ?? true, fields: app.config_injection.fields } : null, model_mappings: { ...app.model_mappings } });
     setEditingId(app.id);
   };
 
@@ -236,7 +257,7 @@ export default function Applications() {
                     <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('config_type')}</Text>
                     <Select  style={{ width: '100%' }}
                       value={draft.config_injection?.config_type || 'codex_toml'}
-                      onChange={v => updateDraft({ config_injection: { config_type: v, config_path: draft.config_injection?.config_path || '' } })}
+                      onChange={v => updateDraft({ config_injection: { config_type: v, config_path: draft.config_injection?.config_path || '', backup_enabled: draft.config_injection?.backup_enabled ?? true } })}
                       options={[
                         { value: 'codex_toml', label: 'codex_toml' },
                         { value: 'claude_json', label: 'claude_json' },
@@ -247,9 +268,82 @@ export default function Applications() {
                     <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('config_path')}</Text>
                     <input className="drawer-input"
                       value={draft.config_injection?.config_path || ''}
-                      onChange={e => updateDraft({ config_injection: { config_type: draft.config_injection?.config_type || 'codex_toml', config_path: e.target.value } })}
+                      onChange={e => updateDraft({ config_injection: { config_type: draft.config_injection?.config_type || 'codex_toml', config_path: e.target.value, backup_enabled: draft.config_injection?.backup_enabled ?? true } })}
                       placeholder="~/.codex/config.toml" />
                   </div>
+                </div>
+
+                {/* Advanced injection config */}
+                <Divider style={{ margin: '4px 0', fontSize: 11, color: 'var(--text-tertiary)' }}>{t('advanced')}</Divider>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 2 }}>{t('config_dir')}</Text>
+                    <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 6 }}>{t('config_dir_desc')}</Text>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input className="drawer-input"
+                        value={draft.config_injection?.config_dir || ''}
+                        onChange={e => updateDraft({ config_injection: { ...draft.config_injection!, config_dir: e.target.value || undefined } })}
+                        placeholder={t('config_dir_placeholder')}
+                        style={{ flex: 1 }} />
+                      <Button size="small" icon={<FolderOpenOutlined />} onClick={async () => {
+                        const { open } = await import('@tauri-apps/plugin-dialog');
+                        const dir = await open({ directory: true, multiple: false, title: t('config_dir') });
+                        if (dir) updateDraft({ config_injection: { ...draft.config_injection!, config_dir: dir } });
+                      }} style={{ borderRadius: 6, fontSize: 11 }}>{t('browse')}</Button>
+                    </div>
+                  </div>
+                  <div>
+                    <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('backup_enabled')}</Text>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Switch checked={draft.config_injection?.backup_enabled ?? true}
+                        onChange={c => updateDraft({ config_injection: { ...draft.config_injection!, backup_enabled: c } })} />
+                      <Text style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{t('backup_enabled_desc')}</Text>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Inject fields */}
+                {draft.config_injection?.config_type === 'codex_toml' && (
+                  <div style={{ marginBottom: 16 }}>
+                    <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('inject_fields')}</Text>
+                    <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>{t('inject_fields_desc')}</Text>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {['model', 'reasoning_effort', 'model_catalog_json', 'model_providers', 'marketplaces'].map(f => {
+                        const labels: Record<string, string> = {
+                          model: t('inject_field_model'),
+                          reasoning_effort: t('inject_field_reasoning'),
+                          model_catalog_json: t('inject_field_catalog'),
+                          model_providers: t('inject_field_providers'),
+                          marketplaces: t('inject_field_marketplaces'),
+                        };
+                        const selected = !draft.config_injection?.fields || draft.config_injection.fields.includes(f);
+                        return (
+                          <Tag key={f}
+                            color={selected ? 'blue' : 'default'}
+                            style={{ cursor: 'pointer', borderRadius: 4, padding: '2px 8px', fontSize: 11 }}
+                            onClick={() => {
+                              const current = draft.config_injection?.fields || ['model', 'reasoning_effort', 'model_catalog_json', 'model_providers', 'marketplaces'];
+                              const next = selected
+                                ? current.filter(x => x !== f)
+                                : [...current, f];
+                              updateDraft({ config_injection: { ...draft.config_injection!, fields: next.length > 0 ? next : undefined } });
+                            }}
+                          >{labels[f]}</Tag>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Config snippet */}
+                <div style={{ marginBottom: 16 }}>
+                  <Text style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>{t('config_snippet')}</Text>
+                  <textarea className="drawer-textarea"
+                    value={draft.config_snippet || ''}
+                    onChange={e => updateDraft({ config_snippet: e.target.value || undefined })}
+                    placeholder={t('config_snippet_placeholder')}
+                    rows={3}
+                  />
                 </div>
 
                 {/* Codex proxy settings */}
@@ -400,7 +494,10 @@ export default function Applications() {
                 </Space>
                 <Space size={2}>
                   {app.config_injection?.config_path && (
-                    <Button type="text" size="small" icon={<CodeOutlined />} onClick={() => openConfigModal(app)} style={{ borderRadius: 4, fontSize: 12 }}>{t('view_config')}</Button>
+                    <>
+                      <Button type="text" size="small" icon={<FileTextOutlined />} onClick={() => openViewConfigModal(app)} style={{ borderRadius: 4, fontSize: 12 }}>{t('view_config')}</Button>
+                      <Button type="text" size="small" icon={<CodeOutlined />} onClick={() => openConfigModal(app)} style={{ borderRadius: 4, fontSize: 12 }}>{t('preview_config')}</Button>
+                    </>
                   )}
                   <Button type="text" size="small" icon={<EditOutlined />} onClick={() => startEdit(app)} style={{ borderRadius: 4, fontSize: 12 }}>{t('edit')}</Button>
                 </Space>
@@ -415,15 +512,34 @@ export default function Applications() {
       <Modal
         title={<span style={{ fontSize: 14, fontWeight: 600 }}>{configModalTitle}</span>}
         open={configModalOpen}
-        onCancel={() => setConfigModalOpen(false)}
+        onCancel={() => { setConfigModalOpen(false); setConfigFiles([]); }}
         footer={null}
-        width={700}
-        styles={{ body: { padding: 0, maxHeight: 480, overflow: 'auto' } }}
+        width={720}
+        styles={{ body: { padding: 0, maxHeight: 520, overflow: 'auto' } }}
       >
         {configModalLoading ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)' }}>{t('loading')}</div>
+        ) : configFiles.length > 1 ? (
+          <Tabs
+            activeKey={configFileTab}
+            onChange={setConfigFileTab}
+            size="small"
+            style={{ padding: '0 4px' }}
+            items={configFiles.map((f, i) => ({
+              key: String(i),
+              label: <span style={{ fontSize: 12 }}>{f.name}</span>,
+              children: (
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8, wordBreak: 'break-all' }}>{f.path}</div>
+                  <CodeMirrorBox value={f.content} />
+                </div>
+              ),
+            }))}
+          />
         ) : (
-          <CodeMirrorBox value={configModalContent} />
+          <div style={{ padding: '8px 12px' }}>
+            <CodeMirrorBox value={configModalContent} />
+          </div>
         )}
       </Modal>
     </>

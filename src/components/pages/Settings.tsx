@@ -1,15 +1,21 @@
 import { useState, useEffect } from 'react';
-import { Card, Button, Typography, Space,  Radio, Row, Col, Switch, message } from 'antd';
+import { Card, Button, Typography, Space, Radio, Row, Col, Switch, message, InputNumber } from 'antd';
 import {
-  MoonOutlined, SunOutlined, GlobalOutlined, CheckOutlined,
-  ThunderboltOutlined, DesktopOutlined,
+  MoonOutlined, SunOutlined, GlobalOutlined,
+  ThunderboltOutlined, DesktopOutlined, ExportOutlined, ImportOutlined,
+  CloseOutlined, CheckOutlined,
 } from '@ant-design/icons';
 import { useI18n } from '../../i18n';
 import { useAppearance } from '../../appearance/store';
-import { getAutoStart, setAutoStart, toggleProxy } from '../../api';
+import {
+  getAutoStart, setAutoStart, toggleProxy,
+  fetchSettings, saveSettings, fetchStatus,
+  exportConfig, importConfig,
+} from '../../api';
 import { THEME_STYLES_META } from '../../appearance/themeTokens';
 import type { ThemeStyle } from '../../appearance/themeTokens';
 import type { TextSize, FontChoice } from '../../appearance/store';
+import type { AppSettings } from '../../types';
 
 const { Text, Title } = Typography;
 
@@ -22,16 +28,19 @@ const STYLE_SWATCHES: Record<ThemeStyle, { bg: string; surface: string; accent: 
   amber: { bg: '#0e0c08', surface: '#1a1610', accent: '#e8a040' },
 };
 
-
-
 export default function Settings() {
   const { t, lang, setLang } = useI18n();
   const { themeStyle, setThemeStyle, textSize, setTextSize, fontFamily, setFontFamily, themeMode, setThemeMode } = useAppearance();
   const [autoStart, setAutoStartState] = useState(false);
+  const [proxyEnabled, setProxyEnabled] = useState(false);
   const [togglingAuto, setTogglingAuto] = useState(false);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     getAutoStart().then(setAutoStartState).catch(() => {});
+    fetchSettings().then(s => setSettings(s)).catch(() => {});
+    fetchStatus().then(s => setProxyEnabled(s.enabled)).catch(() => {});
   }, []);
 
   const handleAutoStartToggle = async (checked: boolean) => {
@@ -39,14 +48,67 @@ export default function Settings() {
     try {
       await setAutoStart(checked);
       setAutoStartState(checked);
-      if (checked) {
-        await toggleProxy(true);
-      }
+      if (checked) await toggleProxy(true);
     } catch {
       message.error(t('settings_failed'));
     } finally {
       setTogglingAuto(false);
     }
+  };
+
+  const handleSaveSettings = async (patch: Partial<AppSettings>) => {
+    if (!settings) return;
+    setSaving(true);
+    const next = { ...settings, ...patch };
+    try {
+      await saveSettings(next);
+      setSettings(next);
+    } catch {
+      message.error(t('settings_failed'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Import / Export ──
+
+  const handleExport = async () => {
+    try {
+      const json = await exportConfig();
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ironlink-config-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      message.success(t('export_success'));
+    } catch (e: any) {
+      message.error(e?.message || String(e));
+    }
+  };
+
+  const handleImport = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const result = await importConfig(text);
+        message.success(t('import_success', { sections: result }));
+        // Reload settings after import
+        const s = await fetchSettings();
+        setSettings(s);
+        const as = await getAutoStart();
+        setAutoStartState(as);
+      } catch (e: any) {
+        message.error(e?.message || String(e));
+      }
+    };
+    input.click();
   };
 
   return (
@@ -56,7 +118,6 @@ export default function Settings() {
         <Title level={5} style={{ marginTop: 0, marginBottom: 20 }}>{t('appearance')}</Title>
 
         <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-
           {/* Theme Style */}
           <div>
             <Text strong style={{ fontSize: 14, display: 'block', marginBottom: 4 }}>{t('theme_style')}</Text>
@@ -89,26 +150,18 @@ export default function Settings() {
                         background: 'linear-gradient(135deg, ' + swatch.bg + ', ' + swatch.surface + ')',
                         position: 'relative', overflow: 'hidden',
                       }}>
-                        <div style={{
-                          position: 'absolute', inset: 0,
-                          background: 'linear-gradient(135deg, ' + swatch.accent + '88, transparent 60%)',
-                        }} />
-                        <div style={{
-                          position: 'absolute', bottom: 0, left: 0, right: 0, height: 1,
-                          background: swatch.accent + '44',
-                        }} />
+                        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, ' + swatch.accent + '88, transparent 60%)' }} />
+                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 1, background: swatch.accent + '44' }} />
                         {selected && <div style={{
                           position: 'absolute', top: 8, right: 8, width: 22, height: 22, borderRadius: '50%',
-                          background: swatch.accent + '33', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: swatch.accent, display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}>
-                          <CheckOutlined style={{ color: swatch.accent, fontSize: 13 }} />
+                          <CheckOutlined style={{ color: '#fff', fontSize: 12 }} />
                         </div>}
                       </div>
-                      <div style={{ padding: '10px 14px' }}>
+                      <div style={{ padding: '8px 12px 10px' }}>
                         <Text strong style={{ fontSize: 13 }}>{meta.label}</Text>
-                        <div>
-                          <Text type="secondary" style={{ fontSize: 11 }}>{meta.desc}</Text>
-                        </div>
+                        <div><Text type="secondary" style={{ fontSize: 11 }}>{meta.desc}</Text></div>
                       </div>
                     </div>
                   </Col>
@@ -192,8 +245,10 @@ export default function Settings() {
 
       {/* ── System Settings ── */}
       <Card className="hover-card" style={{ borderRadius: 12 }}>
-        <Title level={5} style={{ marginTop: 0 }}>{t('system_settings')}</Title>
-        <Space orientation="vertical" style={{ width: '100%' }} size="middle">
+        <Title level={5} style={{ marginTop: 0, marginBottom: 20 }}>{t('system_settings')}</Title>
+
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          {/* Auto-start */}
           <div className="config-row">
             <Space>
               <ThunderboltOutlined style={{ fontSize: 18 }} />
@@ -204,6 +259,89 @@ export default function Settings() {
             </Space>
             <Switch checked={autoStart} onChange={handleAutoStartToggle} loading={togglingAuto} size="small" />
           </div>
+
+          {/* Proxy port */}
+          {settings && (
+            <div className="config-row">
+              <Space>
+                <GlobalOutlined style={{ fontSize: 18 }} />
+                <div>
+                  <Text style={{ fontSize: 14, fontWeight: 500 }}>{t('proxy_port')}</Text>
+                  <div><Text type="secondary" style={{ fontSize: 12 }}>{t('proxy_port_desc')}</Text>
+                  {proxyEnabled && <Text type="danger" style={{ fontSize: 11, display: 'block' }}>{t('proxy_port_stop_hint')}</Text>}</div>
+                </div>
+              </Space>
+              <InputNumber
+                min={1024} max={65535}
+                value={settings.proxy_port}
+                placeholder="15723"
+                disabled={proxyEnabled}
+                onChange={v => {
+                  if (v && v !== settings.proxy_port) {
+                    handleSaveSettings({ proxy_port: v });
+                  }
+                }}
+                size="small"
+                style={{ width: 100 }}
+              />
+            </div>
+          )}
+
+          {/* Start minimized */}
+          {settings && (
+            <div className="config-row">
+              <Space>
+                <DesktopOutlined style={{ fontSize: 18 }} />
+                <div>
+                  <Text style={{ fontSize: 14, fontWeight: 500 }}>{t('start_minimized')}</Text>
+                  <div><Text type="secondary" style={{ fontSize: 12 }}>{t('start_minimized_desc')}</Text></div>
+                </div>
+              </Space>
+              <Switch
+                checked={settings.start_minimized}
+                onChange={c => handleSaveSettings({ start_minimized: c })}
+                loading={saving} size="small"
+              />
+            </div>
+          )}
+
+          {/* Minimize to tray on close */}
+          {settings && (
+            <div className="config-row">
+              <Space>
+                <CloseOutlined style={{ fontSize: 18 }} />
+                <div>
+                  <Text style={{ fontSize: 14, fontWeight: 500 }}>{t('minimize_to_tray')}</Text>
+                  <div><Text type="secondary" style={{ fontSize: 12 }}>{t('minimize_to_tray_desc')}</Text></div>
+                </div>
+              </Space>
+              <Switch
+                checked={settings.minimize_to_tray_on_close}
+                onChange={c => handleSaveSettings({ minimize_to_tray_on_close: c })}
+                loading={saving} size="small"
+              />
+            </div>
+          )}
+
+          {/* Config injection toggle */}
+          {settings && (
+            <div className="config-row">
+              <Space>
+                <GlobalOutlined style={{ fontSize: 18 }} />
+                <div>
+                  <Text style={{ fontSize: 14, fontWeight: 500 }}>{t('config_injection_toggle')}</Text>
+                  <div><Text type="secondary" style={{ fontSize: 12 }}>{t('config_injection_toggle_desc')}</Text></div>
+                </div>
+              </Space>
+              <Switch
+                checked={settings.config_injection_enabled}
+                onChange={c => handleSaveSettings({ config_injection_enabled: c })}
+                loading={saving} size="small"
+              />
+            </div>
+          )}
+
+          {/* Language */}
           <div className="config-row">
             <Space>
               <GlobalOutlined style={{ fontSize: 18 }} />
@@ -219,8 +357,36 @@ export default function Settings() {
         </Space>
       </Card>
 
+      {/* ── Data Management ── */}
+      <Card className="hover-card" style={{ borderRadius: 12 }}>
+        <Title level={5} style={{ marginTop: 0, marginBottom: 20 }}>{t('data_management')}</Title>
 
+        <div className="config-row">
+          <Space>
+            <ExportOutlined style={{ fontSize: 18 }} />
+            <div>
+              <Text style={{ fontSize: 14, fontWeight: 500 }}>{t('export_config')}</Text>
+              <div><Text type="secondary" style={{ fontSize: 12 }}>{t('export_config_desc')}</Text></div>
+            </div>
+          </Space>
+          <Button size="small" icon={<ExportOutlined />} onClick={handleExport} shape="round">
+            {t('export_config')}
+          </Button>
+        </div>
+
+        <div className="config-row" style={{ marginTop: 12 }}>
+          <Space>
+            <ImportOutlined style={{ fontSize: 18 }} />
+            <div>
+              <Text style={{ fontSize: 14, fontWeight: 500 }}>{t('import_config')}</Text>
+              <div><Text type="secondary" style={{ fontSize: 12 }}>{t('import_config_desc')}</Text></div>
+            </div>
+          </Space>
+          <Button size="small" icon={<ImportOutlined />} onClick={handleImport} shape="round">
+            {t('import_config')}
+          </Button>
+        </div>
+      </Card>
     </Space>
   );
 }
-

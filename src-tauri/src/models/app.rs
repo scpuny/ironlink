@@ -29,6 +29,9 @@ pub struct AppConfig {
     /// Per-app model mappings: app model name → upstream provider + model
     #[serde(default)]
     pub model_mappings: HashMap<String, MappingTarget>,
+    /// Custom TOML/JSON snippet to merge when injecting config (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_snippet: Option<String>,
 }
 
 /// Instructions for rewriting an app's configuration file to use IronLink as proxy.
@@ -38,7 +41,26 @@ pub struct AppInjection {
     pub config_type: String,
     /// Absolute path to the app's configuration file
     pub config_path: String,
+
+    /// Override the app's config base directory (e.g. custom ~/.codex path).
+    /// When set, the backup/restore path is derived from this directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_dir: Option<String>,
+
+    /// Whether to atomic-backup the config file before overwriting (default true).
+    #[serde(default = "default_backup_enabled")]
+    pub backup_enabled: bool,
+
+    /// Which top-level fields to inject into the config file.
+    /// - None (= default): inject all known fields (model, reason_effort, model_providers, etc.)
+    /// - Some(list): only inject the specified fields.
+    /// Supported field names: "model", "reasoning_effort", "model_catalog_json",
+    /// "model_providers", "experimental_bearer_token", "marketplaces".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fields: Option<Vec<String>>,
 }
+
+fn default_backup_enabled() -> bool { true }
 
 /// Where to route a matching model: which provider and what model to use upstream.
 #[derive(Debug, Clone, Serialize, Deserialize)]

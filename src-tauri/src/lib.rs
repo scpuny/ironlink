@@ -18,46 +18,78 @@ use tracing::info;
 
 use crate::config::AppState;
 
-/// Run the Axum proxy server in a background tokio task.
-pub fn start_proxy(state: Arc<AppState>) {
-    tauri::async_runtime::spawn(async move {
-        let app = Router::new()
-            .route("/api/status", get(api::get_status))
-            .route("/api/backend", get(api::get_backend).put(api::put_backend))
-            .route("/api/models", get(api::get_models).put(api::put_models))
-            .route("/api/proxy", post(api::toggle_proxy_handler))
-            .route("/api/logs", get(api::get_logs))
-            .route("/api/profiles", get(api::get_profiles).put(api::put_profiles))
-            .route("/api/apps", get(api::get_apps).put(api::put_apps))
-            .route("/api/profiles/activate", post(api::post_profiles_activate))
-            .route("/api/config", get(api::get_config).put(api::put_config))
-            .route("/v1/models", get(proxy::handle_models))
-            .route("/v1/responses/websocket", get(proxy::handle_websocket))
-            .route("/v1/realtime", get(proxy::handle_websocket))
-            .route("/v1/{*path}", any(proxy::handle_proxy))
-            .layer(CorsLayer::permissive())
-            .with_state(state);
+/// Start the Axum proxy server on the port from settings.
+/// Uses graceful shutdown — call `stop_proxy_server` to send the shutdown signal.
+pub async fn start_proxy_server(state: Arc<AppState>) {
+    // Prevent double-start
+    if state.proxy_shutdown_tx.lock().await.is_some() {
+        tracing::warn!("Proxy server already running, ignoring start request");
+        return;
+    }
 
-        let addr = SocketAddr::from(([0, 0, 0, 0], config::PROXY_PORT));
+    let app = Router::new()
+        .route("/api/status", get(api::get_status))
+        .route("/api/backend", get(api::get_backend).put(api::put_backend))
+        .route("/api/models", get(api::get_models).put(api::put_models))
+        .route("/api/proxy", post(api::toggle_proxy_handler))
+        .route("/api/logs", get(api::get_logs))
+        .route("/api/profiles", get(api::get_profiles).put(api::put_profiles))
+        .route("/api/apps", get(api::get_apps).put(api::put_apps))
+        .route("/api/profiles/activate", post(api::post_profiles_activate))
+        .route("/api/config", get(api::get_config).put(api::put_config))
+        .route("/v1/models", get(proxy::handle_models))
+        .route("/v1/responses/websocket", get(proxy::handle_websocket))
+        .route("/v1/realtime", get(proxy::handle_websocket))
+        .route("/v1/{*path}", any(proxy::handle_proxy))
+        .layer(CorsLayer::permissive())
+        .with_state(state.clone());
 
-        // Kill old process on this port
-        let _ = std::process::Command::new("sh")
-            .args(["-c", &format!("lsof -ti :{} | xargs kill 2>/dev/null", config::PROXY_PORT)])
-            .output();
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let port = {
+        let s = state.settings.lock().await;
+        s.proxy_port
+    };
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
-        let listener = match tokio::net::TcpListener::bind(addr).await {
-            Ok(l) => l,
-            Err(e) => {
-                tracing::error!("Failed to bind proxy server: {e}");
-                return;
-            }
-        };
-        info!("Proxy server listening on http://{}", addr);
-        if let Err(e) = axum::serve(listener, app).await {
-            tracing::error!("Proxy server error: {e}");
+    // Kill old process on this port
+    let _ = std::process::Command::new("sh")
+        .args(["-c", &format!("lsof -ti :{} | xargs kill 2>/dev/null", port)])
+        .output();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    *state.proxy_shutdown_tx.lock().await = Some(tx);
+
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!("Failed to bind proxy server on port {port}: {e}");
+            *state.proxy_shutdown_tx.lock().await = None;
+            return;
         }
-    });
+    };
+
+    info!("Proxy server listening on http://{}", addr);
+    if let Err(e) = axum::serve(listener, app)
+        .with_graceful_shutdown(async { rx.await.ok(); })
+        .await
+    {
+        tracing::error!("Proxy server error: {e}");
+    }
+
+    // Clean up after server stops
+    *state.proxy_shutdown_tx.lock().await = None;
+    *state.proxy_enabled.lock().await = false;
+    info!("Proxy server stopped");
+}
+
+/// Send graceful shutdown signal to the running proxy server.
+pub async fn stop_proxy_server(state: Arc<AppState>) {
+    if let Some(tx) = state.proxy_shutdown_tx.lock().await.take() {
+        let _ = tx.send(());
+        info!("Proxy server shutdown signal sent");
+    } else {
+        tracing::warn!("No proxy server running to stop");
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -72,6 +104,7 @@ pub fn run() {
     let state = AppState::new();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
             commands::status::get_status,
@@ -87,6 +120,10 @@ pub fn run() {
             commands::config::set_auto_start,
             commands::config::get_codex_config_file,
             commands::config::read_file_content,
+            commands::config::preview_app_config,
+            commands::config::get_app_config_files,
+            commands::config::get_model_catalog,
+            commands::config::regenerate_model_catalog,
             commands::profiles::get_profiles,
             commands::profiles::save_profiles,
             commands::profiles::activate_profile,
@@ -95,10 +132,13 @@ pub fn run() {
             commands::status::set_proxy_config,
             commands::apps::get_apps,
             commands::apps::save_apps,
+            commands::settings_cmd::get_settings,
+            commands::settings_cmd::save_settings,
+            commands::settings_cmd::export_config,
+            commands::settings_cmd::import_config,
         ])
         .setup(move |_app| {
-            start_proxy(state);
-            info!("Tauri UI started");
+            info!("Tauri UI started (proxy server starts on demand)");
             Ok(())
         })
         .run(tauri::generate_context!())

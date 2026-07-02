@@ -40,7 +40,7 @@ impl OutputProtocol for AnthropicOutput {
                     MessageRole::Tool => "user", // Anthropic uses user role for tool results
                     MessageRole::System => "user",
                 };
-                let mut msg = serde_json::json!({
+                let msg = serde_json::json!({
                     "role": role,
                     "content": build_anthropic_content(m),
                 });

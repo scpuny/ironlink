@@ -3,7 +3,7 @@
 use serde_json::Value;
 use crate::protocol::core::types::*;
 use crate::protocol::core::traits::OutputProtocol;
-use crate::protocol::reasoning::styles::{self, apply_reasoning_options};
+use crate::protocol::reasoning::styles::apply_reasoning_options;
 
 /// Builds OpenAI Chat Completions wire format from canonical ProtocolRequest/ProtocolResponse.
 pub struct ChatOutput;
@@ -242,7 +242,7 @@ fn build_chat_tool(tool: &ToolDefinition) -> Value {
             })
         }
         ToolType::Namespace(children) => {
-            let tools: Vec<Value> = children.iter().map(build_chat_tool).collect();
+            let _tools: Vec<Value> = children.iter().map(build_chat_tool).collect();
             serde_json::json!({
                 "type": "function",
                 "function": { "name": tool.name, "parameters": tool.parameters }

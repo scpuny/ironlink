@@ -1,29 +1,31 @@
-// ── SseTransformStream ──
+// ── SSE stream transformer: Chat ↔ Anthropic ↔ Responses ──
 
+use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::io;
 
+use crate::protocol::core::traits::SseTransform;
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
 
-use crate::protocol::core::traits::SseTransform;
-use crate::protocol::sse::chat_sse::ChatSseConverter;
 use crate::protocol::sse::anthropic_sse;
-use crate::protocol::sse::parser::{take_sse_block, append_utf8_safe};
+use crate::protocol::sse::chat_sse::ChatSseConverter;
+use crate::protocol::sse::parser::{append_utf8_safe, take_sse_block};
 
-/// Wraps an upstream byte `Stream` and transforms its SSE events
-/// into Responses API SSE events.
+/// Wraps an upstream SSE byte stream and transforms events
+/// from the upstream wire protocol to the Responses API SSE format.
 pub struct SseTransformStream<S> {
     inner: S,
     mode: Mode,
     buffer: Vec<u8>,
     finished: bool,
+    #[allow(dead_code)]
     converted: bool,
 }
 
 enum Mode {
     Chat(ChatSseConverter),
+    #[allow(dead_code)]
     Anthropic {
         buffer: String,
         remainder: Vec<u8>,
@@ -56,7 +58,8 @@ impl<S> SseTransformStream<S> {
     }
 
     /// Create a Chat SSE converter with the original request for field passthrough.
-    pub fn with_request(inner: S, original_request: serde_json::Value) -> Self {
+    #[allow(dead_code)]
+    pub fn with_request(inner: S, _original_request: serde_json::Value) -> Self {
         Self {
             inner,
             mode: Mode::Chat(ChatSseConverter::default()),
@@ -80,6 +83,7 @@ impl<S: Stream<Item = io::Result<Bytes>> + Unpin> Stream for SseTransformStream<
         let inner_ptr = &mut this.inner as *mut S;
         let mode_ptr = &mut this.mode as *mut Mode;
 
+        // ponytail: unsafe because Pin<&mut T> doesn't let us borrow two fields
         let inner = unsafe { &mut *inner_ptr };
         let mode = unsafe { &mut *mode_ptr };
 
@@ -116,8 +120,8 @@ impl<S: Stream<Item = io::Result<Bytes>> + Unpin> Stream for SseTransformStream<
                         if !output.is_empty() { Poll::Ready(Some(Ok(Bytes::from(output)))) }
                         else { cx.waker().wake_by_ref(); Poll::Pending }
                     }
-                    Poll::Ready(Some(Err(e))) => { this.finished = true; Poll::Ready(Some(Err(e))) }
-                    Poll::Ready(None) => { *finalized = true; cx.waker().wake_by_ref(); Poll::Pending }
+                    Poll::Ready(Some(Err(e))) => { *finalized = true; Poll::Ready(Some(Err(e))) }
+                    Poll::Ready(None) => { *finalized = true; Poll::Ready(None) }
                     Poll::Pending => Poll::Pending,
                 }
             }

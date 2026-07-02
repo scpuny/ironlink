@@ -6,3 +6,4 @@ pub mod config;
 pub mod models_cmd;
 pub mod profiles;
 pub mod status;
+pub mod settings_cmd;

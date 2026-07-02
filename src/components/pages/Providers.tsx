@@ -26,13 +26,12 @@ import { CSS } from '@dnd-kit/utilities';
 
 import { PRESETS } from '../../presets';
 import type { ProviderPreset } from '../../presets';
-import { useProfiles, useProxyConfig } from '../../hooks/useApi';
+import { useProfiles } from '../../hooks/useApi';
 import { useI18n } from '../../i18n';
-import { saveProfiles, fetchUpstreamModels, setProxyConfig } from '../../api';
+import { saveProfiles, fetchUpstreamModels } from '../../api';
 import type { RelayProfileData } from '../../api';
-import type { ProxyConfig } from '../../types';
 
-const { Text } = Typography;
+const { Text, Title } = Typography;
 
 const CAT_LABELS: Record<string, string> = {
   official: 'cat_official',
@@ -96,15 +95,12 @@ function createProfileFromPreset(preset: ProviderPreset): RelayProfile {
 
 export default function Providers() {
   const { data: profilesData, refetch: refetchProfiles } = useProfiles();
-  const { data: proxyCfg, refetch: refetchProxyCfg } = useProxyConfig();
   const [profiles, setProfiles] = useState<RelayProfile[]>([]);
-  const [proxyDraft, setProxyDraft] = useState<ProxyConfig | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
   const { t } = useI18n();
-  const [enabled, setEnabled] = useState(true);
   const [presetOpen, setPresetOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -119,27 +115,6 @@ export default function Providers() {
   }, [profilesData]);
 
   // Get first model from enabled providers (with prefix)
-  const firstProviderModel = useMemo(() => {
-    for (const p of profiles) {
-      if (!p.enabled) continue;
-      if (p.model) return p.providerId + '/' + p.model;
-      if (p.modelList.length > 0) return p.providerId + '/' + p.modelList[0];
-    }
-    return '';
-  }, [profiles]);
-
-  useEffect(() => {
-    if (proxyCfg) {
-      // Use provider model as default if config has empty or hardcoded placeholder
-      const needsDefault = !proxyCfg.default_model || proxyCfg.default_model === 'deepseek-v4-flash-free';
-      setProxyDraft(needsDefault && firstProviderModel
-        ? { ...proxyCfg, default_model: firstProviderModel }
-        : proxyCfg
-      );
-    }
-  }, [proxyCfg, firstProviderModel]);
-
-  // Sync draft when editing a profile
   useEffect(() => {
     if (editingId && !draft) {
       const p = profiles.find(pr => pr.id === editingId);
@@ -160,15 +135,6 @@ export default function Providers() {
     setDraft(np);
   };
 
-  const handleAddEmpty = () => {
-    const np: RelayProfile = {
-      id: genId(), providerId: '', name: t('new_provider'), baseUrl: '', apiKey: '',
-      protocol: 'chatCompletions', model: '', testModel: '', modelList: [], active: false, enabled: true,
-    };
-    setProfiles(prev => [...prev, np]);
-    setEditingId(np.id);
-    setDraft(np);
-  };
 
   const [fetchingModels, setFetchingModels] = useState<string | null>(null);
 
@@ -277,37 +243,45 @@ export default function Providers() {
 
   // ── List View ──
   if (!editingProfile) {
+    const enabledCount = profiles.filter(p => p.enabled).length;
+    const modelCount = profiles.reduce((s, p) => s + (p.modelList?.length || 0), 0);
+
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Card style={{ borderRadius: 12 }} className="hover-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <div>
-              <Text strong style={{ fontSize: 16 }}>{t('provider_list')}</Text>
-              <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>{t('provider_count', { count: profiles.length })}</Text>
+        {/* Header card */}
+        <div className="fluent-card" style={{ padding: '24px 28px', borderRadius: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div className="fluent-icon-box" style={{
+              width: 40, height: 40, borderRadius: 8,
+              background: 'rgba(255,165,0,0.15)', color: '#cc7a00',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <ApiOutlined style={{ fontSize: 18 }} />
             </div>
-          </div>
-
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
-            background: 'var(--config-row-bg)', borderRadius: 8, marginBottom: 16,
-            border: '1px solid var(--border-subtle)'
-          }}>
-            <Switch checked={enabled} onChange={setEnabled} size="small" />
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <Text strong style={{ fontSize: 13 }}>{t('enable_providers')}</Text>
-              <Text type="secondary" style={{ fontSize: 11 }}>{t('enable_providers_desc')}</Text>
+            <div style={{ flex: 1 }}>
+              <Title level={4} style={{ margin: 0, fontSize: 17, fontWeight: 600 }}>{t('providers')}</Title>
+              <Text type="secondary" style={{ fontSize: 12, marginTop: 1, display: 'block' }}>
+                {enabledCount}/{profiles.length} {t('enabled')} &middot; {modelCount} {t('models')}
+              </Text>
             </div>
+            <Button icon={<PlusOutlined />} onClick={() => setPresetOpen(!presetOpen)}>
+              {presetOpen ? t('cancel') : t('add_provider')}
+            </Button>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'end' }}>
-            <Button icon={<PlusOutlined />} onClick={handleAddEmpty}>{t('add_provider')}</Button>
-          </div>
-
+          {/* Preset selector — collapsible */}
           {presetOpen && (
-            <PresetSelector search={search} onSearch={setSearch} onSelect={handlePresetSelect} />
+            <div style={{ marginTop: 16, borderTop: '1px solid var(--border-subtle)', paddingTop: 16 }}>
+              <PresetSelector search={search} onSearch={setSearch} onSelect={(preset) => {
+                handlePresetSelect(preset);
+                setPresetOpen(false);
+                setSearch('');
+              }} />
+            </div>
           )}
-        </Card>
+        </div>
 
+        {/* Provider list */}
         <Card style={{ borderRadius: 12 }}>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={profiles.map(p => p.id)} strategy={verticalListSortingStrategy}>
@@ -317,7 +291,6 @@ export default function Providers() {
                     key={profile.id}
                     profile={profile}
                     totalCount={profiles.length}
-                    enabled={enabled}
                     onToggleEnabled={handleToggleEnabled}
                     onTest={handleTest}
                     testing={testingId === profile.id}
@@ -331,74 +304,7 @@ export default function Providers() {
           </DndContext>
         </Card>
 
-        {/* Proxy Config Card */}
-        <Card style={{ borderRadius: 12 }} className="hover-card">
-          <Text strong style={{ fontSize: 14 }}>{t('proxy_config_title')}</Text>
-          <Text type="secondary" style={{ display: 'block', fontSize: 11, marginBottom: 16 }}>
-            {t('proxy_config_desc')}
-          </Text>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div>
-              <Text style={{ fontSize: 12, display: 'block', marginBottom: 4, color: 'var(--text-secondary)' }}>{t('default_model')}</Text>
-              <Select
-                value={proxyDraft?.default_model || undefined}
-                onChange={v => setProxyDraft(p => p ? { ...p, default_model: v || '' } : null)}
-                placeholder={t('select_model_placeholder')}
-                style={{ width: '100%' }}
-                allowClear
-                options={(function() {
-                  const seen = new Set<string>();
-                  const result: { value: string; label: string }[] = [];
-                  const isTextModel = (name: string) =>
-                    !/video|image|vision|tts|whisper|embed|realtime|audio|img|dalle/i.test(name);
-                  for (const p of profiles) {
-                    if (!p.enabled) continue;
-                    const add = (v: string) => {
-                      if (!v || !isTextModel(v)) return;
-                      const key = p.providerId + '/' + v;
-                      if (!seen.has(key)) { seen.add(key); result.push({ value: key, label: key }); }
-                    };
-                    // Split by newline then by space to handle messy model_list entries
-                    p.modelList.forEach(m => add(m));
-                  }
-                  // Also add provider.model as first option
-                  for (const p of profiles) {
-                    if (p.enabled && p.model && isTextModel(p.model)) {
-                      const key = p.providerId + '/' + p.model;
-                      if (!seen.has(key)) { seen.add(key); result.unshift({ value: key, label: key }); }
-                    }
-                  }
-                  return result;
-                })()}
-              />
-            </div>
-            <div>
-              <Text style={{ fontSize: 12, display: 'block', marginBottom: 4, color: 'var(--text-secondary)' }}>{t('model_reasoning_effort')}</Text>
-              <Select
-                value={proxyDraft?.reasoning_effort || 'medium'}
-                onChange={v => setProxyDraft(p => p ? { ...p, reasoning_effort: v } : null)}
-                style={{ width: 200 }}
-                options={[
-                  { value: 'low', label: 'low' },
-                  { value: 'medium', label: 'medium' },
-                  { value: 'high', label: 'high' },
-                ]}
-              />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button
-                type="primary"
-                size="small"
-                icon={<SaveOutlined />}
-                onClick={() => {
-                  if (proxyDraft) {
-                    setProxyConfig(proxyDraft).then(refetchProxyCfg).catch(() => antMsg.error(t('save_failed_msg')));
-                  }
-                }}
-              >{t('save')}</Button>
-            </div>
-          </div>
-        </Card>
+
       </div>
     );
   }
@@ -559,11 +465,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function ProfileCard({
-  profile, totalCount, enabled, onToggleEnabled, onTest, testing, onEdit, onDuplicate, onRemove,
+  profile, totalCount, onToggleEnabled, onTest, testing, onEdit, onDuplicate, onRemove,
 }: {
   profile: RelayProfile;
   totalCount: number;
-  enabled: boolean;
   onToggleEnabled: (id: string, enabled: boolean) => void;
   onTest: (profile: RelayProfile) => void;
   testing: boolean;
@@ -604,20 +509,29 @@ function ProfileCard({
           >
             {profile.enabled ? t('enabled') : t('disabled')}
           </Tag>
-          {profile.modelList.length > 0 && (
-            <Tag style={{ marginLeft: 4, fontSize: 9, lineHeight: '16px', padding: '0 4px', verticalAlign: 'middle' }}>
-              {t('models_count', { count: profile.modelList.length })}
-            </Tag>
-          )}
+          <Tag style={{ marginLeft: 4, fontSize: 9, lineHeight: '16px', padding: '0 4px', verticalAlign: 'middle' }}>
+            {protocolLabel(profile.protocol, t)}
+          </Tag>
         </strong>
-        <small>{protocolLabel(profile.protocol, t)} · {profile.baseUrl || t('not_set')}</small>
+        <small>{profile.baseUrl || t('not_set')}</small>
+        {profile.modelList.length > 0 && (
+          <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+            {profile.modelList.slice(0, 4).map(m => (
+              <span key={m} style={{ fontSize: 9, fontFamily: 'monospace', color: 'var(--text-secondary)', background: 'var(--config-row-bg)', padding: '1px 5px', borderRadius: 3, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>{m}</span>
+            ))}
+            {profile.modelList.length > 4 && (
+              <Tag style={{ fontSize: 8, lineHeight: '14px', padding: '0 4px', margin: 0, borderRadius: 2 }}>
+                +{profile.modelList.length - 4}
+              </Tag>
+            )}
+          </div>
+        )}
       </span>
       <span className="relay-card-actions" onClick={e => e.stopPropagation()}>
         <Switch
           size="small"
           checked={profile.enabled}
           onChange={(c) => onToggleEnabled(profile.id, c)}
-          disabled={!enabled}
           style={{ marginRight: 8 }}
         />
         <Tooltip title={t('test_connectivity')}>

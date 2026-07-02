@@ -24,9 +24,8 @@ use axum::{
     response::Response,
 };
 use bytes::Bytes;
-use futures::{SinkExt, StreamExt, TryStreamExt};
+use futures::{SinkExt, TryStreamExt};
 
-use crate::config;
 use crate::config::AppState;
 use crate::protocol;
 use crate::models::*;
@@ -104,7 +103,7 @@ pub async fn handle_proxy(
     State(state): State<Arc<AppState>>,
     method: Method,
     Path(path): Path<String>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     body: Bytes,
 ) -> Response<Body> {
     let enabled = *state.proxy_enabled.lock().await;

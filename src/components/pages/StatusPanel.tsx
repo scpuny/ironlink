@@ -1,11 +1,15 @@
-import { useState, useMemo } from 'react';
-import { Card, Button, theme, Row, Col, Tag, Typography, Space, Spin, message } from 'antd';
-import { PoweroffOutlined, PlayCircleOutlined, ReloadOutlined, GlobalOutlined, ApiOutlined, LinkOutlined } from '@ant-design/icons';
-import { useStatus, useProfiles } from '../../hooks/useApi';
+import { useMemo } from 'react';
+import { Card, Button, Tag, Typography, Space, Spin, message, Row, Col } from 'antd';
+import { PoweroffOutlined, PlayCircleOutlined, ReloadOutlined, GlobalOutlined, ApiOutlined, SwapOutlined, LinkOutlined } from '@ant-design/icons';
+import { useStatus, useApps, useProfiles } from '../../hooks/useApi';
 import { toggleProxy } from '../../api';
 import { useI18n } from '../../i18n';
 
 const { Text } = Typography;
+
+function protocolLabel(p: string) {
+  return p === 'responses' ? 'Responses' : p === 'anthropic' ? 'Claude' : 'Chat';
+}
 
 function EndpointRow({ method, path, desc }: { method: string; path: string; desc: string }) {
   return (
@@ -23,209 +27,200 @@ function EndpointRow({ method, path, desc }: { method: string; path: string; des
 }
 
 export default function StatusPanel() {
-  const { token } = theme.useToken();
   const { data: status, loading, refetch } = useStatus();
-  const { data: rawProfiles } = useProfiles();
-  const enabledProfiles = useMemo(() => {
-    if (!rawProfiles) return [];
-    return rawProfiles
-      .map(p => ({
-        id: p.id, name: p.name, baseUrl: p.base_url,
-        protocol: p.protocol, models: p.model_list || [],
-      }))
-      .filter(p => p.models.length > 0);
-  }, [rawProfiles]);
-  const [toggling, setToggling] = useState(false);
+  const { data: apps } = useApps();
+  const { data: profiles } = useProfiles();
   const { t } = useI18n();
+
+  const enabledApps = useMemo(() => (apps || []).filter(a => a.enabled), [apps]);
+  const enabledProviders = useMemo(() => (profiles || []).filter(p => p.enabled), [profiles]);
+  const totalMappings = useMemo(() =>
+    enabledApps.reduce((sum, a) => sum + Object.keys(a.model_mappings || {}).length, 0),
+  [enabledApps]);
 
   const handleToggle = async () => {
     if (!status) return;
-    setToggling(true);
     try {
-      await toggleProxy(!status.enabled);
-      await refetch();
-      if (!status.enabled) {
-        message.success(t('proxy_enabled_msg'));
-      } else {
-        message.success(t('proxy_disabled_msg'));
-      }
-    } catch {
-      message.error(t('operation_failed'));
-    } finally {
-      setToggling(false);
-    }
+      const ok = await toggleProxy(!status.enabled);
+      if (ok) await refetch();
+    } catch { message.error(t('operation_failed')); }
   };
 
-  if (loading) return <Spin description={t('loading')} style={{ display: 'block', marginTop: 80 }} />;
-  if (!status) return <Card><Typography.Text type="danger">{t('failed_to_load')}</Typography.Text></Card>;
+  if (loading) return <Spin style={{ display: 'block', marginTop: 80 }}><div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)' }}>{t('loading')}</div></Spin>;
+  if (!status) return <Card style={{ borderRadius: 12, marginTop: 40, textAlign: 'center', padding: 40 }}><Text type="danger">{t('failed_to_load')}</Text></Card>;
 
   return (
-    <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-      {/* Status hero */}
-      <Card className="hover-card" style={{ borderRadius: 12 }}>
+    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      {/* Hero — proxy status */}
+      <div className="fluent-card" style={{
+        borderRadius: 12, padding: '20px 28px',
+        background: status.enabled
+          ? 'linear-gradient(135deg, #1a3a2a 0%, #1e2d3d 100%)'
+          : 'var(--card-bg)',
+        border: status.enabled ? '1px solid #29b95533' : '1px solid var(--border-subtle)',
+      }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Space size="middle">
             <div style={{
-              width: 14, height: 14, borderRadius: '50%', position: 'relative',
-              background: status.enabled ? token.colorSuccess : token.colorTextTertiary,
+              width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
+              background: status.enabled ? '#29b955' : 'var(--text-tertiary)',
+              boxShadow: status.enabled ? '0 0 12px #29b95588' : 'none',
               transition: 'all 0.3s',
-            }}>
-              {status.enabled && <div style={{
-                position: 'absolute', inset: -3, borderRadius: '50%',
-                background: token.colorSuccessBg,
-              }} />}
-            </div>
+            }} />
             <div>
-              <Typography.Title level={4} style={{ margin: 0, fontSize: 18 }}>
-                {status.enabled ? t('proxy_active') : t('proxy_disabled')}
-              </Typography.Title>
-              <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+              <Text strong style={{ fontSize: 18, display: 'block', color: status.enabled ? '#e8f5e9' : undefined }}>
+                {status.enabled ? t('proxy_active') : t('proxy_off')}
+              </Text>
+              <Text style={{ fontSize: 12, color: status.enabled ? '#a5d6a7cc' : 'var(--text-tertiary)' }}>
                 {status.enabled ? t('proxy_active_desc') : t('proxy_disabled_desc')}
-              </Typography.Text>
+              </Text>
             </div>
           </Space>
           <Space size="small">
-            <Button icon={<ReloadOutlined />} onClick={refetch} size="small" type="text" />
+            <Button icon={<ReloadOutlined />} onClick={refetch} size="small" type="text" style={{ borderRadius: 6, color: status.enabled ? '#a5d6a7' : undefined }} />
             <Button
               type={status.enabled ? 'default' : 'primary'}
               danger={status.enabled}
               icon={status.enabled ? <PoweroffOutlined /> : <PlayCircleOutlined />}
               onClick={handleToggle}
-              loading={toggling}
-              shape="round"
+              shape="round" size="small"
+              style={status.enabled ? { borderColor: '#29b95544', color: '#e8f5e9', background: 'rgba(255,255,255,0.06)' } : undefined}
             >
               {status.enabled ? t('disable') : t('enable')}
             </Button>
           </Space>
         </div>
-      </Card>
+      </div>
 
-      {/* Stats */}
-      <Row gutter={16}>
-        <Col span={8}>
-          <Card className="hover-card" size="small" style={{ borderRadius: 10, height: '100%' }}
-            styles={{ body: { display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px' } }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'var(--accent-bg)', color: 'var(--accent-border)', fontSize: 16, flexShrink: 0,
+      {/* Stats row — equal-height cards */}
+      <Row gutter={12}>
+        {([
+          { icon: <GlobalOutlined />, bg: 'var(--accent-bg)', color: 'var(--accent-border)', label: t('port'), value: String(status.port), sub: undefined },
+          { icon: <ApiOutlined />, bg: '#0078D418', color: '#0078D4', label: t('applications'), value: `${enabledApps.length} / ${(apps || []).length}`, sub: totalMappings > 0 ? `${totalMappings} ${t('model_mappings')}` : undefined },
+          { icon: <SwapOutlined />, bg: 'rgba(255,165,0,0.15)', color: '#cc7a00', label: t('providers'), value: `${enabledProviders.length} / ${(profiles || []).length}`, sub: `${enabledProviders.reduce((s, p) => s + (p.model_list?.length || 0), 0)} ${t('models')}` },
+          { icon: <LinkOutlined />, bg: '#7c4dff18', color: '#7c4dff', label: t('proxy_url'), value: `http://127.0.0.1:${status.port}/v1`, sub: undefined },
+        ] as const).map((card, i) => (
+          <Col span={6} key={i}>
+            <div className="fluent-card" style={{
+              borderRadius: 10, padding: '16px 20px',
+              display: 'flex', alignItems: 'center', gap: 14, height: '100%',
             }}>
-              <GlobalOutlined />
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2 }}>{t('port')}</div>
-              <div style={{ fontSize: 22, fontFamily: 'monospace', fontWeight: 600, lineHeight: 1.2 }}>
-                {status.port}
+              <div style={{
+                width: 38, height: 38, borderRadius: 8, flexShrink: 0,
+                background: card.bg, color: card.color,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {card.icon}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2 }}>{card.label}</div>
+                <div style={{
+                  fontSize: 16, fontWeight: 600, lineHeight: 1.3,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>{card.value}</div>
+                {card.sub && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1 }}>{card.sub}</div>}
               </div>
             </div>
-          </Card>
+          </Col>
+        ))}
+      </Row>
+
+      {/* Connections overview — inline app + provider briefs */}
+      <Row gutter={12}>
+        <Col span={12}>
+          <div className="fluent-card" style={{ borderRadius: 12, padding: '16px 20px', height: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+              <ApiOutlined style={{ fontSize: 14, color: 'var(--accent-border)' }} />
+              <Text strong style={{ fontSize: 13 }}>{t('applications')}</Text>
+              <Text type="secondary" style={{ fontSize: 11 }}>({enabledApps.length}/{apps?.length || 0})</Text>
+            </div>
+            {apps && apps.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {apps.map(app => {
+                  const mappingCount = Object.keys(app.model_mappings || {}).length;
+                  return (
+                    <div key={app.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
+                      borderRadius: 6, background: 'var(--config-row-bg)',
+                    }}>
+                      <div style={{
+                        width: 22, height: 22, borderRadius: 5, flexShrink: 0,
+                        background: app.enabled ? 'var(--accent-bg)' : 'var(--config-row-bg)',
+                        color: app.enabled ? 'var(--accent-border)' : 'var(--text-tertiary)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 10, fontWeight: 700,
+                      }}>{app.name.charAt(0)}</div>
+                      <Text style={{ fontSize: 12, fontWeight: 500, flex: 1 }} ellipsis>{app.name}</Text>
+                      <Tag style={{ margin: 0, fontSize: 9, lineHeight: '14px', padding: '0 5px', borderRadius: 3 }}>{protocolLabel(app.protocol)}</Tag>
+                      {mappingCount > 0 && <Text style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{mappingCount}m</Text>}
+                      <Tag color={app.enabled ? 'green' : 'default'} style={{ margin: 0, fontSize: 9, lineHeight: '14px', padding: '0 5px', borderRadius: 3 }}>
+                        {app.enabled ? t('enabled') : t('disabled')}
+                      </Tag>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <Text type="secondary" style={{ fontSize: 12 }}>{t('no_config')}</Text>
+            )}
+          </div>
         </Col>
-        <Col span={8}>
-          <Card className="hover-card" size="small" style={{ borderRadius: 10, height: '100%' }}
-            styles={{ body: { display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px' } }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: status.backend === 'anthropic' ? 'rgba(255,165,0,0.2)' : 'var(--accent-bg)',
-              color: status.backend === 'anthropic' ? '#ffa500' : 'var(--accent-border)',
-              fontSize: 16, flexShrink: 0,
-            }}>
-              <ApiOutlined />
+        <Col span={12}>
+          <div className="fluent-card" style={{ borderRadius: 12, padding: '16px 20px', height: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+              <SwapOutlined style={{ fontSize: 14, color: '#cc7a00' }} />
+              <Text strong style={{ fontSize: 13 }}>{t('providers')}</Text>
+              <Text type="secondary" style={{ fontSize: 11 }}>({enabledProviders.length}/{profiles?.length || 0})</Text>
             </div>
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2 }}>{t('backend_type')}</div>
-              <Tag color={status.backend === 'anthropic' ? 'orange' : 'green'}
-                style={{ margin: 0, fontSize: 12, padding: '2px 10px' }}>
-                {status.backend}
-              </Tag>
-            </div>
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card className="hover-card" size="small" style={{ borderRadius: 10, height: '100%' }}
-            styles={{ body: { display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px' } }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'var(--accent-bg)', color: 'var(--accent-border)', fontSize: 16, flexShrink: 0,
-            }}>
-              <LinkOutlined />
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2 }}>{t('api_base')}</div>
-              <Typography.Text copyable={{ text: status.api_base }} style={{
-                fontSize: 12, fontFamily: 'monospace', display: 'block', lineHeight: 1.3,
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {status.api_base || '-'}
-              </Typography.Text>
-            </div>
-          </Card>
+            {profiles && profiles.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {profiles.map(p => {
+                  const modelCount = (p.model_list || []).length;
+                  return (
+                    <div key={p.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
+                      borderRadius: 6, background: 'var(--config-row-bg)',
+                    }}>
+                      <div style={{
+                        width: 22, height: 22, borderRadius: 5, flexShrink: 0,
+                        background: p.enabled ? 'rgba(255,165,0,0.15)' : 'var(--config-row-bg)',
+                        color: p.enabled ? '#cc7a00' : 'var(--text-tertiary)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 10, fontWeight: 700,
+                      }}>{p.name.charAt(0)}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={{ fontSize: 12, fontWeight: 500 }} ellipsis>{p.name}</Text>
+                        <Text type="secondary" style={{ fontSize: 10, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {p.base_url}
+                        </Text>
+                      </div>
+                      <Tag style={{ margin: 0, fontSize: 9, lineHeight: '14px', padding: '0 5px', borderRadius: 3 }}>{protocolLabel(p.protocol)}</Tag>
+                      <Tag color={p.enabled ? 'green' : 'default'} style={{ margin: 0, fontSize: 9, lineHeight: '14px', padding: '0 5px', borderRadius: 3 }}>
+                        {modelCount} m
+                      </Tag>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <Text type="secondary" style={{ fontSize: 12 }}>{t('no_config')}</Text>
+            )}
+          </div>
         </Col>
       </Row>
 
-      {/* Enabled Providers & Models */}
-      {enabledProfiles.length > 0 && (
-        <Card className="hover-card" style={{ borderRadius: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-            <ApiOutlined style={{ fontSize: 16, color: 'var(--accent-border)' }} />
-            <Text strong style={{ fontSize: 14 }}>{t('enabled_providers')}</Text>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {enabledProfiles.map(provider => (
-              <div key={provider.id} className="config-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Tag color="green" style={{ margin: 0 }}>{provider.name}</Tag>
-                  <Tag style={{ margin: 0, fontSize: 10 }}>{provider.protocol === 'responses' ? 'Responses' : 'Chat'}</Tag>
-                  <span style={{ fontSize: 11, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {provider.baseUrl}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                  {provider.models.map(m => (
-                    <Tag key={m} style={{ fontSize: 10, padding: '0 6px', lineHeight: '20px', margin: 0 }}>{m}</Tag>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
       {/* API Endpoints */}
-      <Card className="hover-card" style={{ borderRadius: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-          <ApiOutlined style={{ fontSize: 16, color: 'var(--accent-border)' }} />
-          <Text strong style={{ fontSize: 14 }}>{t('api_endpoints')}</Text>
+      <div className="fluent-card" style={{ borderRadius: 12, padding: '16px 20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+          <LinkOutlined style={{ fontSize: 14, color: 'var(--accent-border)' }} />
+          <Text strong style={{ fontSize: 13 }}>{t('api_endpoints')}</Text>
         </div>
-
-        <div style={{ display: 'grid', gap: 8 }}>
-          <EndpointRow
-            method="GET"
-            path="/v1/models"
-            desc={t('endpoint_models')}
-          />
-          <EndpointRow
-            method="POST"
-            path="/v1/chat/completions"
-            desc={t('endpoint_chat')}
-          />
-          <EndpointRow
-            method="POST"
-            path="/v1/responses"
-            desc={t('endpoint_responses')}
-          />
+        <div style={{ display: 'grid', gap: 6 }}>
+          <EndpointRow method="GET" path="/v1/models" desc={t('endpoint_models')} />
+          <EndpointRow method="POST" path="/v1/chat/completions" desc={t('endpoint_chat')} />
+          <EndpointRow method="POST" path="/v1/responses" desc={t('endpoint_responses')} />
         </div>
-
-        <div style={{
-          marginTop: 16, padding: '10px 14px', borderRadius: 8,
-          background: token.colorFillTertiary, fontSize: 12, fontFamily: 'monospace',
-        }}>
-          <div style={{ color: 'var(--text-secondary)', marginBottom: 4 }}>{t('codex_config_hint')}</div>
-          base_url = &quot;<Typography.Text copyable style={{ fontSize: 12, fontFamily: 'monospace' }}>http://127.0.0.1:{status.port}/v1</Typography.Text>&quot;
-        </div>
-
-        <Typography.Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 8 }}>
-          {t('backup_hint')}
-        </Typography.Text>
-      </Card>
+      </div>
     </Space>
   );
 }

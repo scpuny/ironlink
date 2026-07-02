@@ -38,3 +38,16 @@ export interface ApiResponse<T> {
   data?: T;
   error?: string;
 }
+
+// ── System Settings (mirrors Rust config::settings::AppSettings) ──
+
+export interface AppSettings {
+  proxy_port: number;
+  auto_start: boolean;
+  minimize_to_tray_on_close: boolean;
+  start_minimized: boolean;
+  config_injection_enabled: boolean;
+  language: string;
+  skill_settings_enabled?: boolean;
+  unified_session?: boolean;
+}

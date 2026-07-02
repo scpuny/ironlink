@@ -24,10 +24,12 @@ pub async fn put_backend(State(state): State<Arc<AppState>>, Json(backend): Json
 /// Request body for the proxy toggle endpoint.
 pub struct ToggleBody { enabled: bool }
 
-/// POST /api/proxy — enable or disable the proxy.
+/// POST /api/proxy — enable or disable the proxy (HTTP API, delegates to toggle command).
 pub async fn toggle_proxy_handler(State(state): State<Arc<AppState>>, Json(body): Json<ToggleBody>) -> Json<bool> {
     let pcfg = state.proxy_config.lock().await.clone();
-    let result = config::toggle_proxy(body.enabled, &pcfg.default_model, &pcfg.reasoning_effort);
+    let profiles = state.relay_profiles.lock().await.clone();
+    let apps = state.apps.lock().await.clone();
+    let result = config::toggle_proxy(body.enabled, &pcfg.default_model, &pcfg.reasoning_effort, &profiles, &apps);
     *state.proxy_enabled.lock().await = body.enabled;
     Json(result)
 }

@@ -75,7 +75,8 @@ function AppInner() {
     themeMode === 'system' ? (resolveDark() ? 'dark' : 'light') : themeMode;
 
   const toggleTheme = () => {
-    setThemeMode(themeMode === 'dark' ? 'light' : themeMode === 'light' ? 'system' : 'dark');
+    // Only toggle between light and dark; "system" from Settings is resolved at call time
+    setThemeMode(isDark ? 'light' : 'dark');
   };
 
   const PageComponent = pages[page] || StatusPanel;

@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct CustomToolSpec {
     openai_name: String,
     built_in: bool,
@@ -19,6 +20,7 @@ pub struct CodexToolContext {
 }
 
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 struct FunctionToolSpec {
     pub namespace: String,
     pub name: String,

@@ -2,15 +2,20 @@
 
 pub mod apps;
 pub mod profiles;
+pub mod settings;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
+use toml_edit;
 
 use crate::models::*;
 
-pub const PROXY_PORT: u16 = 15723;
+/// Read proxy port from settings, falling back to default.
+pub fn proxy_port() -> u16 {
+    settings::AppSettings::load().proxy_port
+}
 pub const ORIG_PORT: u16 = 57321;
 
 fn settings_path() -> PathBuf {
@@ -19,30 +24,24 @@ fn settings_path() -> PathBuf {
 }
 
 pub fn read_auto_start() -> bool {
-    serde_json::from_str::<bool>(&std::fs::read_to_string(&settings_path()).unwrap_or_default()).ok().unwrap_or(false)
+    settings::AppSettings::load().auto_start
 }
 
 pub fn write_auto_start(enabled: bool) -> anyhow::Result<()> {
-    let path = settings_path();
-    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
-    std::fs::write(&path, if enabled { "true" } else { "false" })?;
-    Ok(())
+    let mut s = settings::AppSettings::load();
+    s.auto_start = enabled;
+    s.save()
 }
 
-fn write_proxy_enabled_state(enabled: bool) -> anyhow::Result<()> {
-    let path = settings_path();
-    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
-    let existing = std::fs::read_to_string(&path).unwrap_or_else(|_| "{}".into());
-    let mut obj: serde_json::Value = serde_json::from_str(&existing).unwrap_or(serde_json::json!({}));
-    if let Some(map) = obj.as_object_mut() { map.insert("proxy_enabled".into(), serde_json::Value::Bool(enabled)); }
-    std::fs::write(&path, serde_json::to_string_pretty(&obj)?)?;
+fn write_proxy_enabled_state(_enabled: bool) -> anyhow::Result<()> {
+    // No longer persisted; proxy_enabled is runtime-only in AppState.
     Ok(())
 }
 
 pub fn auto_restore_codex_configs_if_needed() {
-    let proxy_url = format!("http://127.0.0.1:{}/v1", PROXY_PORT);
+    let proxy_url = format!("http://127.0.0.1:{}/v1", proxy_port());
     let codex_config = read_codex_config();
-    let bak_path = codex_config_bak_path();
+    let bak_path = ironlink_dir().join("codex-config.bak");
     if codex_config.contains(&proxy_url) && bak_path.exists() {
         info!("Startup: Codex config has stale proxy URL, restoring from backup");
         restore_codex_configs();
@@ -59,6 +58,9 @@ pub struct AppState {
     pub apps: Mutex<Vec<AppConfig>>,
     pub proxy_config: Mutex<ProxyConfig>,
     pub log_buffer: Mutex<Vec<String>>,
+    /// Sender to trigger graceful proxy server shutdown.
+    pub proxy_shutdown_tx: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    pub settings: Mutex<settings::AppSettings>,
 }
 
 impl AppState {
@@ -77,7 +79,7 @@ impl AppState {
         let app_list = apps::read();
 
         auto_restore_codex_configs_if_needed();
-        if let Err(e) = write_proxy_enabled_state(false) { warn!("Failed to persist proxy_enabled state: {e}"); }
+        let _ = write_proxy_enabled_state(false);
 
         Arc::new(Self {
             proxy_enabled: Mutex::new(false),
@@ -95,110 +97,361 @@ impl AppState {
             apps: Mutex::new(app_list),
             proxy_config: Mutex::new(ProxyConfig::default()),
             log_buffer: Mutex::new(Vec::new()),
+            proxy_shutdown_tx: Mutex::new(None),
+            settings: Mutex::new(settings::AppSettings::load()),
         })
     }
 }
 
-pub fn toggle_proxy(enabled: bool, default_model: &str, reasoning_effort: &str) -> bool {
-    let codex_path = codex_config_path();
-    let bak_path = codex_config_bak_path();
+/// Enable/disable config injection for all enabled apps.
+///
+/// Enabled:  backup per-app config, rewrite with proxy settings.
+/// Disabled: restore per-app config from backup.
+pub fn toggle_proxy(enabled: bool, default_model: &str, reasoning_effort: &str,
+                    profiles: &[crate::models::RelayProfile], apps: &[crate::models::AppConfig]) -> bool {
     if enabled {
-        if !codex_path.exists() {
-            warn!("Codex config not found at {:?}", codex_path);
-            return false;
+        let mut any_ok = false;
+        for app in apps.iter().filter(|a| a.enabled) {
+            let Some(inj) = &app.config_injection else { continue; };
+            let config_path = std::path::Path::new(&inj.config_path);
+            if !config_path.exists() {
+                warn!("App '{}' config not found at {:?}", app.name, config_path);
+                continue;
+            }
+            let original = match std::fs::read_to_string(config_path) {
+                Ok(c) => c,
+                Err(e) => { warn!("Failed to read '{}' config: {e}", app.name); continue; }
+            };
+
+            if inj.backup_enabled {
+                let bak_path = app_config_bak_path(inj);
+                if let Some(parent) = bak_path.parent() { let _ = std::fs::create_dir_all(parent); }
+                if let Err(e) = std::fs::write(&bak_path, &original) {
+                    warn!("Backup failed for '{}': {e}", app.name);
+                }
+            }
+
+            if let Err(e) = write_app_proxy_config(&original, default_model, reasoning_effort, profiles, inj, &app.config_snippet) {
+                warn!("Failed to inject config for '{}': {e}", app.name);
+            } else {
+                any_ok = true;
+                info!("Config injected for '{}'", app.name);
+            }
         }
-        let original = std::fs::read_to_string(&codex_path).unwrap_or_default();
-        if let Some(parent) = bak_path.parent() { let _ = std::fs::create_dir_all(parent); }
-        if let Err(e) = std::fs::write(&bak_path, &original) {
-            warn!("Failed to backup Codex config: {e}");
+
+        // Legacy fallback: try default Codex path
+        if !any_ok {
+            let codex_path = codex_config_path(None);
+            if codex_path.exists() {
+                let original = std::fs::read_to_string(&codex_path).unwrap_or_default();
+                let bak_path = ironlink_dir().join("codex-config.bak");
+                if let Some(parent) = bak_path.parent() { let _ = std::fs::create_dir_all(parent); }
+                let _ = std::fs::write(&bak_path, &original);
+                let _ = write_proxy_config(&original, default_model, reasoning_effort, profiles);
+            }
         }
-        if let Err(e) = write_proxy_config(&original, default_model, reasoning_effort) {
-            warn!("Failed to write proxy config: {e}");
-            return false;
-        }
-        info!("Proxy enabled — Codex config rewritten to use IronLink");
+        any_ok
     } else {
+        // Restore from per-app backups
+        for app in apps.iter().filter(|a| a.config_injection.is_some()) {
+            if let Some(inj) = &app.config_injection {
+                if inj.backup_enabled {
+                    restore_app_config(inj);
+                }
+            }
+        }
+        // Legacy fallback
         restore_codex_configs();
-        info!("Proxy disabled — Codex config restored from backup");
-        let _ = std::fs::remove_file(&bak_path);
+        true
     }
-    if let Err(e) = write_proxy_enabled_state(enabled) {
-        warn!("Failed to persist proxy_enabled state: {e}");
-    }
-    true
 }
 
-fn codex_config_path() -> PathBuf {
-    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| "/tmp".into());
-    PathBuf::from(home).join(".codex").join("config.toml")
-}
-
-fn codex_config_bak_path() -> PathBuf {
-    let mut p = codex_config_path(); p.set_extension("toml.bak"); p
-}
-
-pub fn read_codex_config() -> String {
-    std::fs::read_to_string(codex_config_path()).unwrap_or_default()
-}
-
-fn restore_codex_configs() {
-    let bak_path = codex_config_bak_path();
+/// Restore a specific app's config from its backup.
+pub fn restore_app_config(inj: &crate::models::AppInjection) {
+    let config_path = std::path::Path::new(&inj.config_path);
+    let bak_path = app_config_bak_path(inj);
     if bak_path.exists() {
-        if let Err(e) = std::fs::copy(&bak_path, codex_config_path()) {
+        if let Err(e) = std::fs::copy(&bak_path, config_path) {
+            warn!("Failed to restore config from backup: {e}");
+        } else {
+            info!("Config restored from: {:?}", bak_path);
+        }
+    }
+}
+
+pub fn restore_codex_configs() {
+    let codex_path = codex_config_path(None);
+    let bak_path = ironlink_dir().join("codex-config.bak");
+    if bak_path.exists() {
+        if let Err(e) = std::fs::copy(&bak_path, &codex_path) {
             warn!("Failed to restore Codex config from backup: {e}");
         }
     }
 }
 
-pub async fn push_log(state: &AppState, msg: String) {
-    let mut log = state.log_buffer.lock().await;
-    log.push(msg);
-    if log.len() > 500 { log.remove(0); }
+fn codex_config_path(override_dir: Option<&str>) -> PathBuf {
+    match override_dir {
+        Some(dir) => PathBuf::from(dir).join("config.toml"),
+        None => {
+            let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| "/tmp".into());
+            PathBuf::from(home).join(".codex").join("config.toml")
+        }
+    }
 }
 
-fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &str) -> anyhow::Result<()> {
-    let proxy_url = format!("http://127.0.0.1:{}/v1", PROXY_PORT);
-    let bare_model = default_model.split('/').last().unwrap_or(default_model);
-    let mut root: toml::Value = original.parse::<toml::Value>().unwrap_or(toml::Value::Table(toml::value::Table::new()));
-    let table = root.as_table_mut().unwrap();
-    table.insert("model".into(), toml::Value::String(bare_model.to_string()));
-    let sandbox_mode = original.lines()
-        .find(|l| l.trim().starts_with("sandbox_mode"))
-        .and_then(|l| l.trim().split('=').nth(1).map(|s| s.trim().trim_matches('"').to_string()))
-        .unwrap_or_else(|| "danger-full-access".to_string());
-    table.insert("model_provider".into(), toml::Value::String("ironlink".into()));
-    table.insert("model_reasoning_effort".into(), toml::Value::String(reasoning_effort.to_string()));
-    table.insert("sandbox_mode".into(), toml::Value::String(sandbox_mode));
-    table.remove("openai_base_url"); table.remove("model_catalog_json"); table.remove("shell_environment_policy");
+fn _codex_config_bak_path() -> PathBuf {
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| "/tmp".into());
+    PathBuf::from(home).join(".ironlink").join("codex-config.bak")
+}
 
-    let ironlink = toml::Value::Table({
-        let mut m = toml::value::Table::new();
-        m.insert("name".into(), toml::Value::String("IronLink".into()));
-        m.insert("base_url".into(), toml::Value::String(proxy_url));
-        m.insert("wire_api".into(), toml::Value::String("responses".into()));
-        m.insert("supports_websockets".into(), toml::Value::Boolean(false));
-        m.insert("requires_openai_auth".into(), toml::Value::Boolean(false));
-        m.insert("allow_insecure".into(), toml::Value::Boolean(true));
-        m
-    });
-    let mut mp = match table.remove("model_providers") { Some(toml::Value::Table(t)) => t, _ => toml::value::Table::new() };
-    mp.insert("ironlink".into(), ironlink);
-    table.insert("model_providers".into(), toml::Value::Table(mp));
+pub fn read_codex_config() -> String {
+    std::fs::read_to_string(&codex_config_path(None)).unwrap_or_default()
+}
 
-    let mut mkts = match table.remove("marketplaces") { Some(toml::Value::Table(t)) => t, _ => toml::value::Table::new() };
-    let bundled = match mkts.remove("openai-bundled") { Some(toml::Value::Table(t)) => t, _ => toml::value::Table::new() };
-    let mut updated = bundled.clone();
-    updated.insert("source_type".into(), toml::Value::String("local".into()));
-    for (k, v) in bundled { if k != "source_type" { updated.entry(k).or_insert(v); } }
-    mkts.insert("openai-bundled".into(), toml::Value::Table(updated));
-    table.insert("marketplaces".into(), toml::Value::Table(mkts));
+fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &str, profiles: &[crate::models::RelayProfile]) -> anyhow::Result<()> {
+    let proxy_url = format!("http://127.0.0.1:{}/v1", proxy_port());
+    let mut doc: toml_edit::DocumentMut = original.parse().map_err(|e| anyhow::anyhow!("TOML parse error: {e}"))?;
 
-    let config = toml::to_string_pretty(&root)?;
-    let path = codex_config_path();
+    // core model & reasoning effort
+    doc["model"] = toml_edit::value(default_model);
+    doc["reasoning_effort"] = toml_edit::value(reasoning_effort);
+
+    // Write model catalog JSON file and reference it
+    let catalog_path = ironlink_dir().join("ironlink-model-catalog.json");
+    write_ironlink_model_catalog(&catalog_path, profiles)?;
+    doc["model_catalog_json"] = toml_edit::value("ironlink-model-catalog.json");
+
+    // [model_providers.ironlink] table
+    let ironlink_table = doc["model_providers"]["ironlink"]
+        .or_insert(toml_edit::table());
+    if let Some(t) = ironlink_table.as_table_mut() {
+        t.set_implicit(true);
+        t["name"] = toml_edit::value("IronLink");
+        t["base_url"] = toml_edit::value(&proxy_url);
+        t["wire_api"] = toml_edit::value("responses");
+        t["supports_websockets"] = toml_edit::value(false);
+        t["requires_openai_auth"] = toml_edit::value(false);
+        t["allow_insecure"] = toml_edit::value(true);
+    }
+
+    // marketplaces.openai-bundled.source_type = "local"
+    if !doc.contains_key("marketplaces") {
+        doc["marketplaces"] = toml_edit::table();
+    }
+    let bundled = doc["marketplaces"]["openai-bundled"]
+        .or_insert(toml_edit::table());
+    if let Some(t) = bundled.as_table_mut() {
+        t.set_implicit(true);
+        t["source_type"] = toml_edit::value("local");
+    }
+
+    let config = doc.to_string();
+    let path = codex_config_path(None);
     if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
     std::fs::write(&path, &config)?;
-    info!("proxy config.toml written");
+    info!("proxy config.toml written (toml_edit)");
     Ok(())
+}
+
+/// Extract sandbox_mode from original config, default to "danger-full-access".
+fn _codex_sandbox_mode(original: &str) -> String {
+    if let Ok(doc) = original.parse::<toml_edit::DocumentMut>() {
+        doc.get("sandbox_mode")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| "danger-full-access".to_string())
+    } else {
+        "danger-full-access".to_string()
+    }
+}
+
+/// Backup path for a specific app injection.
+pub fn app_config_bak_path(inj: &crate::models::AppInjection) -> PathBuf {
+    let base = inj.config_dir.as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| ironlink_dir());
+    base.join(format!("{}.bak", inj.config_type))
+}
+
+/// Atomically write content to a file: write to .tmp then rename.
+pub fn atomic_write(path: &std::path::Path, content: &str) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp_path = path.with_extension("tmp");
+    std::fs::write(&tmp_path, content)?;
+    std::fs::rename(&tmp_path, path)?;
+    Ok(())
+}
+
+/// Write proxy config for a specific app, respecting field-level control and snippet.
+fn write_app_proxy_config(original: &str, default_model: &str, reasoning_effort: &str,
+                          profiles: &[crate::models::RelayProfile],
+                          inj: &crate::models::AppInjection, snippet: &Option<String>) -> anyhow::Result<()> {
+    let proxy_url = format!("http://127.0.0.1:{}/v1", proxy_port());
+    let config_path = std::path::Path::new(&inj.config_path);
+    let fields = inj.fields.as_ref();
+
+    match inj.config_type.as_str() {
+        "codex_toml" => {
+            let mut doc: toml_edit::DocumentMut = original.parse()
+                .map_err(|e| anyhow::anyhow!("TOML parse: {e}"))?;
+
+            let wants = |f: &str| fields.as_ref().map_or(true, |fl| fl.contains(&f.to_string()));
+
+            if wants("model") { doc["model"] = toml_edit::value(default_model); }
+            if wants("reasoning_effort") { doc["reasoning_effort"] = toml_edit::value(reasoning_effort); }
+
+            if wants("model_catalog_json") {
+                let catalog_path = ironlink_dir().join("ironlink-model-catalog.json");
+                write_ironlink_model_catalog(&catalog_path, profiles)?;
+                doc["model_catalog_json"] = toml_edit::value("ironlink-model-catalog.json");
+            }
+
+            if wants("model_providers") {
+                let ironlink_table = doc["model_providers"]["ironlink"]
+                    .or_insert(toml_edit::table());
+                if let Some(t) = ironlink_table.as_table_mut() {
+                    t.set_implicit(true);
+                    t["name"] = toml_edit::value("IronLink");
+                    t["base_url"] = toml_edit::value(&proxy_url);
+                    t["wire_api"] = toml_edit::value("responses");
+                    t["supports_websockets"] = toml_edit::value(false);
+                    t["requires_openai_auth"] = toml_edit::value(false);
+                    t["allow_insecure"] = toml_edit::value(true);
+                }
+            }
+
+            if wants("marketplaces") {
+                if !doc.contains_key("marketplaces") {
+                    doc["marketplaces"] = toml_edit::table();
+                }
+                let bundled = doc["marketplaces"]["openai-bundled"]
+                    .or_insert(toml_edit::table());
+                if let Some(t) = bundled.as_table_mut() {
+                    t.set_implicit(true);
+                    t["source_type"] = toml_edit::value("local");
+                }
+            }
+
+            let mut config_str = doc.to_string();
+            if let Some(snip) = snippet.as_ref().filter(|s| !s.trim().is_empty()) {
+                config_str.push_str("\n# ironlink: user snippet\n");
+                config_str.push_str(snip);
+                config_str.push('\n');
+            }
+
+            atomic_write(&config_path, &config_str)?;
+            info!("Codex config written (field-filtered) for: {:?}", config_path);
+        }
+        _ => {
+            // Fallback for unknown config types
+            write_proxy_config(original, default_model, reasoning_effort, profiles)?;
+        }
+    }
+    Ok(())
+}
+
+
+/// Preview what an app's config would look like after injection, without writing.
+pub fn preview_app_config(original: &str, default_model: &str, reasoning_effort: &str,
+                          _profiles: &[crate::models::RelayProfile],
+                          inj: &crate::models::AppInjection,
+                          snippet: &Option<String>) -> String {
+    let proxy_url = format!("http://127.0.0.1:{}/v1", proxy_port());
+    let fields = inj.fields.as_ref();
+
+    match inj.config_type.as_str() {
+        "codex_toml" => {
+            let mut doc = match original.parse::<toml_edit::DocumentMut>() {
+                Ok(d) => d,
+                Err(_) => return format!("# Failed to parse existing config as TOML\n{}", original),
+            };
+
+            let wants = |f: &str| fields.as_ref().map_or(true, |fl| fl.contains(&f.to_string()));
+
+            // Apply injection changes directly to the document
+            if wants("model") {
+                doc["model"] = toml_edit::value(default_model);
+            }
+            if wants("reasoning_effort") {
+                doc["reasoning_effort"] = toml_edit::value(reasoning_effort);
+            }
+            if wants("model_catalog_json") {
+                doc["model_catalog_json"] = toml_edit::value("ironlink-model-catalog.json");
+            }
+            if wants("model_providers") {
+                doc["model_providers"]["ironlink"]["name"] = toml_edit::value("IronLink");
+                doc["model_providers"]["ironlink"]["base_url"] = toml_edit::value(&proxy_url);
+                doc["model_providers"]["ironlink"]["wire_api"] = toml_edit::value("responses");
+                doc["model_providers"]["ironlink"]["requires_openai_auth"] = toml_edit::value(false);
+                doc["model_providers"]["ironlink"]["allow_insecure"] = toml_edit::value(true);
+            }
+            if wants("marketplaces") {
+                doc["marketplaces"]["openai-bundled"]["source_type"] = toml_edit::value("local");
+            }
+
+            let mut result = String::new();
+            result.push_str("# IronLink Proxy Config Preview\n");
+            result.push_str(&doc.to_string());
+
+            if let Some(snip) = snippet.as_ref().filter(|s| !s.trim().is_empty()) {
+                result.push('\n');
+                result.push_str("# --- User snippet ---\n");
+                result.push_str(snip);
+                result.push('\n');
+            }
+
+            result
+        }
+        _ => format!("# Preview not available for config type: {}", inj.config_type),
+    }
+}
+
+/// Generate the `ironlink-model-catalog.json` file that tells Codex which models are available.
+/// Follows cc-switch's approach: clone the bundled gpt-5.5 template for each provider model.
+pub fn write_ironlink_model_catalog(path: &std::path::Path, profiles: &[crate::models::RelayProfile]) -> anyhow::Result<()> {
+    let template_text = include_str!("../resources/gpt5_5_template.json");
+    let template: serde_json::Value = serde_json::from_str(template_text)
+        .map_err(|e| anyhow::anyhow!("Failed to parse template: {e}"))?;
+
+    let mut entries = Vec::new();
+
+    for p in profiles.iter().filter(|p| p.enabled) {
+        let mut seen = std::collections::HashSet::new();
+        let all_models: Vec<&str> = p.model_list
+            .iter()
+            .flat_map(|m| m.split_whitespace())
+            .chain(std::iter::once(p.model.as_str()))
+            .filter(|m| !m.is_empty())
+            .collect();
+
+        for (idx, model_id) in all_models.iter().enumerate() {
+            if !seen.insert(model_id.to_string()) { continue; }
+            let slug = format!("{}/{}", p.provider_id, model_id);
+
+            let mut entry = template.clone();
+            if let Some(obj) = entry.as_object_mut() {
+                obj.insert("slug".to_string(), serde_json::json!(slug));
+                obj.insert("display_name".to_string(), serde_json::json!(format!("{} -- {}", p.name, model_id)));
+                obj.insert("description".to_string(), serde_json::json!(format!("IronLink proxy via {}", p.name)));
+                obj.insert("priority".to_string(), serde_json::json!(1000 + idx));
+                obj.insert("additional_speed_tiers".to_string(), serde_json::json!([]));
+            }
+            entries.push(entry);
+        }
+    }
+
+    let catalog = serde_json::json!({ "models": entries });
+    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
+    std::fs::write(path, serde_json::to_string_pretty(&catalog)?)?;
+    info!("ironlink-model-catalog.json written ({} entries)", entries.len());
+    Ok(())
+}
+
+pub fn ironlink_dir() -> std::path::PathBuf {
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| "/tmp".into());
+    std::path::PathBuf::from(home).join(".ironlink")
 }
 
 pub fn read_raw() -> String {
@@ -214,4 +467,14 @@ pub fn write_raw(content: &str) -> anyhow::Result<()> {
     std::fs::write(&config_path, content)?;
     info!("config.toml written");
     Ok(())
+}
+
+/// Append a log line to the shared log buffer (bounded to 500 entries).
+pub async fn push_log(state: &Arc<AppState>, line: String) {
+    let mut buf = state.log_buffer.lock().await;
+    buf.push(line);
+    let n = buf.len();
+    if n > 500 {
+        buf.drain(0..n - 500);
+    }
 }

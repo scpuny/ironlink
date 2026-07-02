@@ -89,7 +89,7 @@ fn direct_parse_chat_response(body: &Value) -> anyhow::Result<ProtocolResponse> 
     if let Some(rc) = msg.get("reasoning_content").and_then(Value::as_str).filter(|s| !s.is_empty()) {
         output.push(OutputItem::Reasoning { text: rc.to_string() });
     }
-    let content_text = msg.get("content").and_then(Value::as_str).unwrap_or("");
+    let _content_text = msg.get("content").and_then(Value::as_str).unwrap_or("");
     if let Some(text) = msg.get("content").and_then(Value::as_str).filter(|s| !s.is_empty()) {
         output.push(OutputItem::Message { role: "assistant".to_string(), content: vec![ContentPart::Text(text.to_string())] });
     } else if let Some(parts) = msg.get("content").and_then(Value::as_array) {

@@ -1,9 +1,9 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/nicegui/static/tauri-v2/permissions-schema.json",
   "identifier": "default",
   "description": "Default capabilities for Codex Proxy",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "dialog:default"
   ]
 }

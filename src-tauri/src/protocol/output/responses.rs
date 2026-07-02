@@ -105,7 +105,7 @@ impl OutputProtocol for ResponsesOutput {
         let mut current_tool_calls = Vec::new();
         let mut current_role = String::new();
 
-        let mut flush_message = |role: &str, content: &mut Vec<Value>, tcs: &mut Vec<Value>, out: &mut Vec<Value>| {
+        let flush_message = |role: &str, content: &mut Vec<Value>, tcs: &mut Vec<Value>, out: &mut Vec<Value>| {
             if !content.is_empty() || !tcs.is_empty() {
                 let mut item = serde_json::json!({
                     "type": "message",

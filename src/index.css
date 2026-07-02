@@ -673,3 +673,24 @@ pre,
   box-shadow: 0 4px 16px rgba(0,0,0,0.10);
   border-color: var(--accent-border) !important;
 }
+
+.drawer-textarea {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--config-row-bg);
+  color: inherit;
+  padding: 6px 10px;
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.drawer-textarea:focus {
+  border-color: var(--accent-border);
+}
+.drawer-textarea::placeholder {
+  color: var(--text-muted);
+}

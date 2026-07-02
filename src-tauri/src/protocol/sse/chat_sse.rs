@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 use serde_json::Value;
 
-use crate::protocol::core::types::*;
 use crate::protocol::core::traits::SseTransform;
 use crate::protocol::tools::context::CodexToolContext;
 use crate::protocol::sse::parser::{take_sse_block, append_utf8_safe, is_done_block};
@@ -157,6 +156,7 @@ impl ChatSseConverter {
 
 // ── Full state ──
 
+#[allow(dead_code)]
 struct ChatSseState {
     response_started: bool,
     completed: bool,
@@ -188,6 +188,7 @@ impl Default for ChatSseState {
     }
 }
 
+#[allow(dead_code)]
 impl ChatSseState {
     fn with_request(orig: &Value) -> Self {
         Self {

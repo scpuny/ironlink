@@ -7,7 +7,7 @@
 //!   4. If no mapping → fall through to legacy prefix/direct provider matching
 //!   5. Route to the resolved provider
 
-use crate::models::{AppConfig, RelayProfile, MappingTarget};
+use crate::models::{AppConfig, RelayProfile};
 
 /// Select a provider and upstream model for the given incoming model+protocol.
 ///
