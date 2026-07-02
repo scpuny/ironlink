@@ -92,20 +92,8 @@ impl OutputProtocol for ChatOutput {
         apply_reasoning_options(&mut result, req);
 
         if !req.tools.is_empty() {
-            let codex_builtins = [
-                "multi_agent_v1", "sub_agent", "subagents",
-                "codex.bash", "codex.terminals",
-            ];
-            let chat_tools: Vec<Value> = req.tools.iter()
-                .filter(|t| !codex_builtins.contains(&t.name.as_str()))
-                .map(build_chat_tool)
-                .collect();
-            if !chat_tools.is_empty() {
-                result["tools"] = Value::Array(chat_tools);
-            } else {
-                // Remove tools field entirely if all were filtered
-                result.as_object_mut().map(|m| m.remove("tools"));
-            }
+            let chat_tools: Vec<Value> = req.tools.iter().map(build_chat_tool).collect();
+            result["tools"] = Value::Array(chat_tools);
         }
         if let Some(ref tc) = req.tool_choice {
             result["tool_choice"] = tc.clone();
@@ -235,12 +223,22 @@ fn build_chat_content(msg: &ProtocolMessage) -> Value {
 fn build_chat_tool(tool: &ToolDefinition) -> Value {
     match &tool.tool_type {
         ToolType::Function => {
+            // Ensure parameters schema always has type: "object"
+            // Some Codex built-in tools (like multi_agent_v1) may have null type
+            let mut params = tool.parameters.clone();
+            if let Some(obj) = params.as_object_mut() {
+                if obj.get("type").and_then(|v| v.as_str()).is_none_or(|t| t != "object") {
+                    obj["type"] = serde_json::json!("object");
+                }
+            } else {
+                params = serde_json::json!({"type": "object", "properties": {}, "required": []});
+            }
             let mut t = serde_json::json!({
                 "type": "function",
                 "function": {
                     "name": tool.name,
                     "description": tool.description.clone().unwrap_or_default(),
-                    "parameters": tool.parameters,
+                    "parameters": params,
                 }
             });
             if let Some(strict) = tool.strict {
