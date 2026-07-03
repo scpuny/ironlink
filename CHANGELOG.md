@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Fix `model_providers` being written as empty `{}`: remove and recreate table to avoid inline table rendering issues
 
 ---
+---
+## v0.3.2 (2026-07-03)
+
+### 修复 / Bug Fixes
+- **`model_providers` 写入为空 `{}` 彻底修复** — `toml_edit` 链式索引 `doc["model_providers"]["ironlink"]` 自动生成内联表导致序列化丢失子段。新增 `doc["model_providers"] = toml_edit::table()` 显式创建标准表绕开该问题
+  Fix `model_providers` written as empty `{}`: chained index auto-creates inline table in `toml_edit`, explicit `doc["model_providers"] = toml_edit::table()` now ensures proper serialization
+
+---
+
 
 
 ## v0.3.0 (2026-07-03)
