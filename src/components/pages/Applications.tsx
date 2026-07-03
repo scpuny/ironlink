@@ -6,10 +6,10 @@ import { EditorState } from '@codemirror/state';
 import { StreamLanguage } from '@codemirror/language';
 import { toml } from '@codemirror/legacy-modes/mode/toml';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { useApps, useProfiles, useProxyConfig } from '../../hooks/useApi';
+import { useApps, useProxyConfig, useProfiles } from '../../hooks/useApi';
 import { useI18n } from '../../i18n';
 import { saveApps, setProxyConfig, toggleProxy, getAutoStart, fetchCodexConfigFile, previewAppConfig, getAppConfigFiles } from '../../api';
-import type { AppData, ConfigFileEntry } from '../../api';
+import type { AppData, ConfigFileEntry, RelayProfileData } from '../../api';
 
 const { Text, Title } = Typography;
 const CODEX_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2'];
@@ -41,9 +41,10 @@ function CodeMirrorBox({ value }: { value: string }) {
 export default function Applications() {
   const { t } = useI18n();
   const { data: appsData, refetch: refetchApps } = useApps();
-  const { data: profilesData } = useProfiles();
   const { data: proxyCfg } = useProxyConfig();
+  const { data: profilesData } = useProfiles();
   const [apps, setApps] = useState<AppData[]>([]);
+  const [profiles, setProfiles] = useState<RelayProfileData[]>([]);
   const [reasoningEffort, setReasoning] = useState('medium');
   const [proxyEnabled, setProxyEnabled] = useState(false);
   const [_, setAuto] = useState(false);
@@ -98,6 +99,10 @@ export default function Applications() {
   }, [appsData]);
 
   useEffect(() => {
+    if (profilesData) setProfiles(profilesData);
+  }, [profilesData]);
+
+  useEffect(() => {
     if (proxyCfg) setReasoning(proxyCfg.reasoning_effort);
     getAutoStart().then(setAuto).catch(() => {});
   }, [proxyCfg]);
@@ -113,7 +118,7 @@ export default function Applications() {
   };
 
   const startEdit = (app: AppData) => {
-    setDraft({ ...app, config_injection: app.config_injection ? { ...app.config_injection, config_dir: app.config_injection.config_dir, backup_enabled: app.config_injection.backup_enabled ?? true, fields: app.config_injection.fields } : null, model_mappings: { ...app.model_mappings } });
+    setDraft({ ...app, config_injection: app.config_injection ? { ...app.config_injection, config_dir: app.config_injection.config_dir, backup_enabled: app.config_injection.backup_enabled ?? true, fields: app.config_injection.fields } : null, model_mappings: { ...app.model_mappings }, model_display_names: { ...app.model_display_names } });
     setEditingId(app.id);
   };
 
@@ -133,38 +138,48 @@ export default function Applications() {
     setDraft({ ...draft, ...patch });
   };
 
-  // Mapping helpers
-  const toggleMapping = (codexModel: string) => {
+  // ── Model mapping helpers ──
+  const addMapping = (codexModel: string) => {
     if (!draft) return;
     const mappings = { ...draft.model_mappings };
-    if (codexModel in mappings) {
-      delete mappings[codexModel];
-    } else {
-      const firstProvider = profilesData?.find(p => p.enabled);
-      mappings[codexModel] = {
-        provider_id: firstProvider?.provider_id || '',
-        upstream_model: firstProvider?.model || '',
-      };
+    // Find first enabled provider as default
+    const firstProvider = profiles.find(p => p.enabled);
+    mappings[codexModel] = {
+      provider_id: firstProvider?.provider_id || '',
+      upstream_model: firstProvider?.model || '',
+    };
+    setDraft({ ...draft, model_mappings: mappings });
+  };
+
+  const removeMapping = (codexModel: string) => {
+    if (!draft) return;
+    const mappings = { ...draft.model_mappings };
+    delete mappings[codexModel];
+    setDraft({ ...draft, model_mappings: mappings });
+  };
+
+  const updateMappingProvider = (codexModel: string, providerId: string) => {
+    if (!draft) return;
+    const mappings = { ...draft.model_mappings };
+    const provider = profiles.find(p => p.provider_id === providerId) || profiles.find(p => p.enabled);
+    mappings[codexModel] = {
+      provider_id: providerId,
+      upstream_model: provider?.model_list?.[0] || provider?.model || '',
+    };
+    setDraft({ ...draft, model_mappings: mappings });
+  };
+
+  const updateMappingModel = (codexModel: string, upstreamModel: string) => {
+    if (!draft) return;
+    const mappings = { ...draft.model_mappings };
+    if (mappings[codexModel]) {
+      mappings[codexModel] = { ...mappings[codexModel], upstream_model: upstreamModel };
     }
     setDraft({ ...draft, model_mappings: mappings });
   };
 
-  const updateMappingTarget = (codexModel: string, field: 'provider_id' | 'upstream_model', value: string) => {
-    if (!draft || !(codexModel in draft.model_mappings)) return;
-    setDraft({
-      ...draft,
-      model_mappings: { ...draft.model_mappings, [codexModel]: { ...draft.model_mappings[codexModel], [field]: value } },
-    });
-  };
-
-  const modelsForProvider = (providerId: string) => {
-    if (!profilesData) return [];
-    const p = profilesData.find(p => p.enabled && p.provider_id === providerId);
-    if (!p) return [];
-    const models = [...(p.model_list || [])];
-    if (p.model && !models.includes(p.model)) models.unshift(p.model);
-    return models;
-  };
+  const enabledProfiles = profiles.filter(p => p.enabled);
+  const codexModels = draft?.models.length ? draft.models : CODEX_MODELS;
 
   // Proxy
   const codexApp = apps.find(a => a.id === 'codex-desktop');
@@ -386,40 +401,89 @@ export default function Applications() {
                   </>
                 )}
 
-                {/* Model mappings */}
+                {/* Model mapping toggle — master switch */}
                 <Divider style={{ margin: '16px 0 12px', fontSize: 11, color: 'var(--text-tertiary)' }}>{t('model_mappings')}</Divider>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                  {(draft.models.length > 0 ? draft.models : CODEX_MODELS).map(codexModel => {
-                    const mapping = draft.model_mappings[codexModel];
-                    return (
-                      <div key={codexModel} style={{
-                        display: 'flex', gap: 12, alignItems: 'center', padding: '5px 8px',
-                        borderRadius: 6, background: 'var(--config-row-bg)',
-                        minHeight: '45px'
-                      }}>
-                        <Switch  checked={!!mapping} onChange={() => toggleMapping(codexModel)} />
-                        <code style={{ width: 100, fontSize: 12, fontFamily: 'monospace', fontWeight: mapping ? 500 : 400 }}>{codexModel}</code>
-                        {mapping ? (
-                          <>
-                            <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                              <ArrowRightOutlined />
-                            </span>
-                            <Select  value={mapping.provider_id}
-                              onChange={v => updateMappingTarget(codexModel, 'provider_id', v)}
-                              style={{ width: 200 }}
-                              options={(profilesData || []).filter(p => p.enabled).map(p => ({ value: p.provider_id, label: p.name }))} />
-                            <Select  value={mapping.upstream_model}
-                              onChange={v => updateMappingTarget(codexModel, 'upstream_model', v)}
-                              style={{ width: 260 }} showSearch
-                              options={modelsForProvider(mapping.provider_id).map(m => ({ value: m, label: m }))} />
-                          </>
-                        ) : (
-                          <Text style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{t('no_mappings_hint')}</Text>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <Switch checked={draft.model_replacement_enabled}
+                      onChange={c => setDraft({ ...draft, model_replacement_enabled: c })} />
+                    <Text style={{ fontSize: 12, fontWeight: 500 }}>{t('model_replacement_enabled')}</Text>
+                    <Text type="secondary" style={{ fontSize: 11 }}>{t('model_replacement_desc')}</Text>
+                  </div>
                 </div>
+
+                {draft.model_replacement_enabled && (
+                  /* Model mapping editor: select provider → select model */
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {enabledProfiles.length === 0 ? (
+                      <Text style={{ fontSize: 11, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                        {t('no_mappings_hint')} — {t('enable_providers_desc')}
+                      </Text>
+                    ) : (
+                      codexModels.map(codexModel => {
+                        const hasMapping = codexModel in draft.model_mappings;
+                        const mapping = draft.model_mappings[codexModel];
+                        const selectedProvider = mapping ? profiles.find(p => p.provider_id === mapping.provider_id) : null;
+                        const modelOptions = selectedProvider
+                          ? [...new Set([selectedProvider.model, ...selectedProvider.model_list].filter(Boolean))]
+                          : [];
+                        return (
+                          <div key={codexModel} style={{
+                            display: 'flex', gap: 8, alignItems: 'center', padding: '5px 8px',
+                            borderRadius: 6, background: 'var(--config-row-bg)',
+                            minHeight: '40px'
+                          }}>
+                            <Switch checked={hasMapping}
+                              onChange={c => {
+                                if (c) addMapping(codexModel);
+                                else removeMapping(codexModel);
+                              }} />
+                            <code style={{
+                              width: 100, fontSize: 12, fontFamily: 'monospace',
+                              opacity: hasMapping ? 1 : 0.4
+                            }}>{codexModel}</code>
+                            {hasMapping && mapping ? (
+                              <>
+                                <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                                  <ArrowRightOutlined />
+                                </span>
+                                <Select
+                                  value={mapping.provider_id}
+                                  onChange={v => updateMappingProvider(codexModel, v)}
+                                  style={{ width: 160 }}
+                                  size="small"
+                                  options={enabledProfiles.map(p => ({
+                                    value: p.provider_id,
+                                    label: p.name,
+                                  }))}
+                                  placeholder={t('select_upstream_model')}
+                                />
+                                <Select
+                                  value={mapping.upstream_model}
+                                  onChange={v => updateMappingModel(codexModel, v)}
+                                  style={{ width: 180 }}
+                                  size="small"
+                                  options={modelOptions.map(m => ({ value: m, label: m }))}
+                                  placeholder={t('select_upstream_model')}
+                                />
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  danger
+                                  icon={<CloseOutlined />}
+                                  onClick={() => removeMapping(codexModel)}
+                                  style={{ borderRadius: 4, fontSize: 10 }}
+                                />
+                              </>
+                            ) : (
+                              <Text style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{t('model_replacement_disabled_hint')}</Text>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
               </div>
             );
           }
@@ -454,14 +518,15 @@ export default function Applications() {
                     </div>
                     <Space size={14} style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
                       <span>{t('default_model')}: <code style={{ fontSize: 10 }}>{app.default_model || '-'}</code></span>
-                      {mappingCount > 0 && <span>{mappingCount} {t('mappings_count', { count: mappingCount }).replace('{count} ', '')}</span>}
+                      {app.model_replacement_enabled && <Tag color="purple" style={{ fontSize: 9, lineHeight: '16px', padding: '0 6px', borderRadius: 3, margin: 0 }}>{t('model_replacement_label')}</Tag>}
+                      {app.model_replacement_enabled && mappingCount > 0 && <span>{mappingCount} {t('mappings_count', { count: mappingCount }).replace('{count} ', '')}</span>}
                     </Space>
                   </div>
                 </Space>
                 <Switch checked={app.enabled} onChange={c => updateApp(app.id, { enabled: c })}  />
               </div>
 
-              {mappingCount > 0 && (
+              {app.model_replacement_enabled && mappingCount > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
                   {Object.entries(app.model_mappings).slice(0, 4).map(([codex, target]) => (
                     <Tag key={codex} style={{ fontSize: 9, lineHeight: '18px', padding: '0 6px', borderRadius: 3, margin: 0 }}>

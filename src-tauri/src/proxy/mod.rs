@@ -33,57 +33,58 @@ use crate::protocol::SseTransformStream;
 
 pub use self::error::{error_response, upstream_error_response};
 
-/// GET /v1/models — aggregate models from all enabled apps.
+/// GET /v1/models — return model list in OpenAI-compatible format.
+///
+/// Returns `{"object":"list","data":[{"id":"...","object":"model","owned_by":"..."}]}`
+/// which is the format Codex Desktop GUI expects from /v1/models.
+/// Also writes the model catalog JSON file for `codex /model` CLI to read.
 pub async fn handle_models(
     State(state): State<Arc<AppState>>,
-) -> axum::Json<ModelsResponse> {
-    tracing::info!("-> GET /v1/models called by Codex");
+) -> impl axum::response::IntoResponse {
+    use axum::http::StatusCode;
+    tracing::info!("GET /v1/models called by Codex");
     let profiles = state.relay_profiles.lock().await;
-    let mut models: Vec<ModelInfo> = Vec::new();
+    let apps = state.apps.lock().await;
 
+    // Write/update the model catalog file for CLI use, respecting model mappings
+    let catalog_path = crate::config::model_catalog_path();
+    let codex_app = apps.iter().find(|a| a.id == "codex-desktop");
+    let catalog_result = if let Some(app) = codex_app {
+        if app.model_replacement_enabled && !app.model_mappings.is_empty() {
+            crate::config::write_mapped_model_catalog(&catalog_path, app, &profiles)
+        } else {
+            crate::config::write_ironlink_model_catalog(&catalog_path, &profiles)
+        }
+    } else {
+        crate::config::write_ironlink_model_catalog(&catalog_path, &profiles)
+    };
+    if let Err(e) = catalog_result {
+        tracing::warn!("Failed to write model catalog: {e}");
+    }
+
+    // Build OpenAI-compatible model list for Desktop GUI
+    let mut data = Vec::new();
+    let mut seen = std::collections::HashSet::<String>::new();
     for p in profiles.iter().filter(|p| p.enabled) {
-        let mut seen = std::collections::HashSet::<String>::new();
         let all_models: Vec<&str> = p.model_list
             .iter()
             .flat_map(|m| m.split_whitespace())
             .chain(std::iter::once(p.model.as_str()))
             .filter(|m| !m.is_empty())
             .collect();
-
         for model_id in all_models {
             if !seen.insert(model_id.to_string()) { continue; }
-            let slug = format!("{}/{}", p.provider_id, model_id);
-            models.push(ModelInfo {
-                slug: slug.clone(),
-                display_name: format!("{} -- {}", p.name, model_id),
-                description: Some(format!("IronLink proxy via {}", p.name)),
-                default_reasoning_level: Some("medium".into()),
-                supported_reasoning_levels: vec![
-                    ReasoningEffortPreset { effort: "low".into(), description: "Low".into(), label: Some("Low".into()), level: Some("low".into()) },
-                    ReasoningEffortPreset { effort: "medium".into(), description: "Medium".into(), label: Some("Medium".into()), level: Some("medium".into()) },
-                    ReasoningEffortPreset { effort: "high".into(), description: "High".into(), label: Some("High".into()), level: Some("high".into()) },
-                ],
-                shell_type: "macOS".into(), visibility: "users".into(),
-                supported_in_api: false, priority: 0,
-                additional_speed_tiers: vec![], base_instructions: String::new(),
-                supports_reasoning_summaries: true, default_reasoning_summary: "concise".into(),
-                support_verbosity: true, default_verbosity: Some("high".into()),
-                web_search_tool_type: "disabled".into(),
-                truncation_policy: TruncationPolicyConfig { auto: true, enabled: true, max_tokens: None },
-                supports_parallel_tool_calls: true,
-                supports_image_detail_original: false,
-                context_window: None, max_context_window: None,
-                auto_compact_token_limit: None,
-                effective_context_window_percent: 90,
-                experimental_supported_tools: vec![],
-                input_modalities: vec!["text".into()],
-                supports_search_tool: false, use_responses_lite: false,
-                apply_patch_tool_type: None,
-                auto_review_model_override: None,
-            });
+            data.push(serde_json::json!({
+                "id": model_id,
+                "object": "model",
+                "owned_by": p.provider_id,
+                "created": 0
+            }));
         }
     }
-    axum::Json(ModelsResponse { models })
+
+    let response = serde_json::json!({"object": "list", "data": data});
+    (StatusCode::OK, [("content-type", "application/json")], serde_json::to_string(&response).unwrap_or_default())
 }
 
 /// GET /v1/responses/websocket or /v1/realtime — WebSocket proxy passthrough.

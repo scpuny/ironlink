@@ -133,10 +133,13 @@ fn parse_tool_definition(tool: &Value) -> Option<ToolDefinition> {
                  tool.get("strict").and_then(Value::as_bool))
             };
             let params = params.unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}, "required": []}));
+            if name.is_empty() { return None; }
             Some(ToolDefinition { name, description: desc, parameters: params, tool_type: ToolType::Function, strict })
         }
         "custom" | "web_search" | "local_shell" | "computer_use" => {
             let desc = tool.get("description").and_then(Value::as_str).map(|s| s.to_string());
+            // Use tool type as fallback name when name is empty (e.g. {"type": "web_search"})
+            let name = if name.is_empty() { tool_type_str.to_string() } else { name };
             let kind = match tool_type_str {
                 "web_search" => ToolType::WebSearch,
                 "local_shell" => ToolType::LocalShell,

@@ -53,6 +53,8 @@ fn default_apps() -> Vec<AppConfig> {
                 fields: None,
             }),
             model_mappings: std::collections::HashMap::new(),
+            model_replacement_enabled: false,
+            model_display_names: std::collections::HashMap::new(),
             config_snippet: None,
         },
         AppConfig {
@@ -66,6 +68,8 @@ fn default_apps() -> Vec<AppConfig> {
             ],
             config_injection: None,
             model_mappings: std::collections::HashMap::new(),
+            model_replacement_enabled: false,
+            model_display_names: std::collections::HashMap::new(),
             config_snippet: None,
         },
     ]

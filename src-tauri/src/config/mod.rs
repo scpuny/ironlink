@@ -132,7 +132,7 @@ pub fn toggle_proxy(enabled: bool, default_model: &str, reasoning_effort: &str,
                 }
             }
 
-            if let Err(e) = write_app_proxy_config(&original, default_model, reasoning_effort, profiles, inj, &app.config_snippet) {
+            if let Err(e) = write_app_proxy_config(&original, &app.default_model, reasoning_effort, profiles, inj, &app.config_snippet, app) {
                 warn!("Failed to inject config for '{}': {e}", app.name);
             } else {
                 any_ok = true;
@@ -163,6 +163,17 @@ pub fn toggle_proxy(enabled: bool, default_model: &str, reasoning_effort: &str,
         }
         // Legacy fallback
         restore_codex_configs();
+
+        // Delete model catalog so Codex reverts to its own models
+        let catalog_path = model_catalog_path();
+        if catalog_path.exists() {
+            if let Err(e) = std::fs::remove_file(&catalog_path) {
+                warn!("Failed to delete model catalog: {e}");
+            } else {
+                info!("Model catalog deleted: {:?}", catalog_path);
+            }
+        }
+
         true
     }
 }
@@ -221,20 +232,20 @@ fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &st
     // Write model catalog to Codex config dir so relative path resolves correctly
     let catalog_path = model_catalog_path();
     write_ironlink_model_catalog(&catalog_path, profiles)?;
-    doc["model_catalog_json"] = toml_edit::value("ironlink-model-catalog.json");
+    doc["model_catalog_json"] = toml_edit::value(crate::config::model_catalog_path().to_string_lossy().as_ref());
 
     // Set active model_provider and [model_providers.ironlink] table
-    doc["model_provider"] = toml_edit::value("ironlink");
+    doc["model_provider"] = toml_edit::value("custom");
     // [model_providers.ironlink] table
-    let ironlink_table = doc["model_providers"]["ironlink"]
+    let ironlink_table = doc["model_providers"]["custom"]
         .or_insert(toml_edit::table());
     if let Some(t) = ironlink_table.as_table_mut() {
         t.set_implicit(true);
-        t["name"] = toml_edit::value("IronLink");
+        t["name"] = toml_edit::value("IronLink Proxy");
         t["base_url"] = toml_edit::value(&proxy_url);
         t["wire_api"] = toml_edit::value("responses");
         t["supports_websockets"] = toml_edit::value(false);
-        t["requires_openai_auth"] = toml_edit::value(false);
+        t["requires_openai_auth"] = toml_edit::value(true);
         t["allow_insecure"] = toml_edit::value(true);
     }
 
@@ -291,7 +302,8 @@ pub fn atomic_write(path: &std::path::Path, content: &str) -> anyhow::Result<()>
 /// Write proxy config for a specific app, respecting field-level control and snippet.
 fn write_app_proxy_config(original: &str, default_model: &str, reasoning_effort: &str,
                           profiles: &[crate::models::RelayProfile],
-                          inj: &crate::models::AppInjection, snippet: &Option<String>) -> anyhow::Result<()> {
+                          inj: &crate::models::AppInjection, snippet: &Option<String>,
+                          app: &crate::models::AppConfig) -> anyhow::Result<()> {
     let proxy_url = format!("http://127.0.0.1:{}/v1", proxy_port());
     let config_path = std::path::Path::new(&inj.config_path);
     let fields = inj.fields.as_ref();
@@ -308,24 +320,30 @@ fn write_app_proxy_config(original: &str, default_model: &str, reasoning_effort:
 
             if wants("model_catalog_json") {
                 let catalog_path = model_catalog_path();
-                write_ironlink_model_catalog(&catalog_path, profiles)?;
-                doc["model_catalog_json"] = toml_edit::value("ironlink-model-catalog.json");
+                if app.model_replacement_enabled {
+                    // Model mapping enabled: catalog only contains mapped models
+                    write_mapped_model_catalog(&catalog_path, app, profiles)?;
+                } else {
+                    // Model mapping disabled: catalog contains all provider models
+                    write_ironlink_model_catalog(&catalog_path, profiles)?;
+                }
+                doc["model_catalog_json"] = toml_edit::value(crate::config::model_catalog_path().to_string_lossy().as_ref());
             }
 
             if wants("model_provider") {
-                doc["model_provider"] = toml_edit::value("ironlink");
+                doc["model_provider"] = toml_edit::value("custom");
             }
 
             if wants("model_providers") {
-                let ironlink_table = doc["model_providers"]["ironlink"]
+                let ironlink_table = doc["model_providers"]["custom"]
                     .or_insert(toml_edit::table());
                 if let Some(t) = ironlink_table.as_table_mut() {
                     t.set_implicit(true);
-                    t["name"] = toml_edit::value("IronLink");
+                    t["name"] = toml_edit::value("IronLink Proxy");
                     t["base_url"] = toml_edit::value(&proxy_url);
                     t["wire_api"] = toml_edit::value("responses");
                     t["supports_websockets"] = toml_edit::value(false);
-                    t["requires_openai_auth"] = toml_edit::value(false);
+                    t["requires_openai_auth"] = toml_edit::value(true);
                     t["allow_insecure"] = toml_edit::value(true);
                 }
             }
@@ -363,9 +381,10 @@ fn write_app_proxy_config(original: &str, default_model: &str, reasoning_effort:
 
 /// Preview what an app's config would look like after injection, without writing.
 pub fn preview_app_config(original: &str, default_model: &str, reasoning_effort: &str,
-                          _profiles: &[crate::models::RelayProfile],
+                          profiles: &[crate::models::RelayProfile],
                           inj: &crate::models::AppInjection,
-                          snippet: &Option<String>) -> String {
+                          snippet: &Option<String>,
+                          app: &crate::models::AppConfig) -> String {
     let proxy_url = format!("http://127.0.0.1:{}/v1", proxy_port());
     let fields = inj.fields.as_ref();
 
@@ -386,10 +405,10 @@ pub fn preview_app_config(original: &str, default_model: &str, reasoning_effort:
                 doc["reasoning_effort"] = toml_edit::value(reasoning_effort);
             }
             if wants("model_catalog_json") {
-                doc["model_catalog_json"] = toml_edit::value("ironlink-model-catalog.json");
+                doc["model_catalog_json"] = toml_edit::value(crate::config::model_catalog_path().to_string_lossy().as_ref());
             }
             if wants("model_provider") {
-                doc["model_provider"] = toml_edit::value("ironlink");
+                doc["model_provider"] = toml_edit::value("custom");
             }
             if wants("model_providers") {
                 doc["model_providers"]["ironlink"]["name"] = toml_edit::value("IronLink");
@@ -413,10 +432,103 @@ pub fn preview_app_config(original: &str, default_model: &str, reasoning_effort:
                 result.push('\n');
             }
 
+            // Append a preview of the model catalog JSON when model replacement is enabled
+            if wants("model_catalog_json") && app.model_replacement_enabled {
+                if let Ok(catalog_json) = preview_model_catalog(profiles, app) {
+                    result.push_str("\n\n# --- ironlink-model-catalog.json (preview) ---\n");
+                    result.push_str(&catalog_json);
+                    result.push('\n');
+                }
+            }
+
             result
         }
         _ => format!("# Preview not available for config type: {}", inj.config_type),
     }
+}
+
+/// Generate a preview of the model catalog JSON string, using model mappings when enabled.
+fn preview_model_catalog(profiles: &[crate::models::RelayProfile], app: &crate::models::AppConfig) -> anyhow::Result<String> {
+    let template_text = include_str!("../resources/gpt5_5_template.json");
+    let template: serde_json::Value = serde_json::from_str(template_text)
+        .map_err(|e| anyhow::anyhow!("Failed to parse template: {e}"))?;
+
+    let mut entries = Vec::new();
+
+    for (idx, (codex_model, target)) in app.model_mappings.iter().enumerate() {
+        let provider_name = profiles.iter()
+            .find(|p| p.enabled && p.provider_id == target.provider_id)
+            .map(|p| p.name.as_str())
+            .unwrap_or(&target.provider_id);
+
+        let display_name = format!("{}/{}", target.provider_id, target.upstream_model);
+
+        let mut entry = template.clone();
+        if let Some(obj) = entry.as_object_mut() {
+            obj.insert("slug".to_string(), serde_json::json!(codex_model));
+            obj.insert("display_name".to_string(), serde_json::json!(display_name));
+            obj.insert("description".to_string(), serde_json::json!(format!("IronLink proxy via {}", provider_name)));
+            obj.insert("priority".to_string(), serde_json::json!(1000 + idx));
+            obj.insert("additional_speed_tiers".to_string(), serde_json::json!([]));
+            obj.insert("service_tiers".to_string(), serde_json::json!([]));
+            obj.insert("availability_nux".to_string(), serde_json::Value::Null);
+            obj.insert("upgrade".to_string(), serde_json::Value::Null);
+            // Remove context window fields - let Codex use its own defaults
+            obj.remove("context_window");
+            obj.remove("max_context_window");
+        }
+        entries.push(entry);
+    }
+
+    let catalog = serde_json::json!({ "models": entries });
+    Ok(serde_json::to_string_pretty(&catalog)?)
+}
+
+/// Generate the model catalog using app model_mappings.
+/// Only models that have a mapping entry appear in the catalog.
+/// Slug = the original Codex model name (key), display_name = providerId/upstream_model.
+///
+/// NOTE: context_window / max_context_window are intentionally NOT set here
+/// because different upstream models have different context limits and we
+/// don't want Codex to assume a wrong value. Codex will use its own defaults.
+pub fn write_mapped_model_catalog(path: &std::path::Path, app: &crate::models::AppConfig, profiles: &[crate::models::RelayProfile]) -> anyhow::Result<()> {
+    let template_text = include_str!("../resources/gpt5_5_template.json");
+    let template: serde_json::Value = serde_json::from_str(template_text)
+        .map_err(|e| anyhow::anyhow!("Failed to parse template: {e}"))?;
+
+    let mut entries = Vec::new();
+
+    for (idx, (codex_model, target)) in app.model_mappings.iter().enumerate() {
+        // Find the provider to get a friendly display name
+        let provider_name = profiles.iter()
+            .find(|p| p.enabled && p.provider_id == target.provider_id)
+            .map(|p| p.name.as_str())
+            .unwrap_or(&target.provider_id);
+
+        let display_name = format!("{}/{}", target.provider_id, target.upstream_model);
+
+        let mut entry = template.clone();
+        if let Some(obj) = entry.as_object_mut() {
+            obj.insert("slug".to_string(), serde_json::json!(codex_model));
+            obj.insert("display_name".to_string(), serde_json::json!(display_name));
+            obj.insert("description".to_string(), serde_json::json!(format!("IronLink proxy via {}", provider_name)));
+            obj.insert("priority".to_string(), serde_json::json!(1000 + idx));
+            obj.insert("additional_speed_tiers".to_string(), serde_json::json!([]));
+            obj.insert("service_tiers".to_string(), serde_json::json!([]));
+            obj.insert("availability_nux".to_string(), serde_json::Value::Null);
+            obj.insert("upgrade".to_string(), serde_json::Value::Null);
+            // Remove context window fields inherited from template - let Codex decide
+            obj.remove("context_window");
+            obj.remove("max_context_window");
+        }
+        entries.push(entry);
+    }
+
+    let catalog = serde_json::json!({ "models": entries });
+    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
+    std::fs::write(path, serde_json::to_string_pretty(&catalog)?)?;
+    info!("mapped model catalog written ({} entries from model_mappings)", entries.len());
+    Ok(())
 }
 
 /// Generate the `ironlink-model-catalog.json` file that tells Codex which models are available.
@@ -448,6 +560,10 @@ pub fn write_ironlink_model_catalog(path: &std::path::Path, profiles: &[crate::m
                 obj.insert("description".to_string(), serde_json::json!(format!("IronLink proxy via {}", p.name)));
                 obj.insert("priority".to_string(), serde_json::json!(1000 + idx));
                 obj.insert("additional_speed_tiers".to_string(), serde_json::json!([]));
+                // Match cc-switch's catalog format for Desktop compatibility
+                obj.insert("service_tiers".to_string(), serde_json::json!([]));
+                obj.insert("availability_nux".to_string(), serde_json::Value::Null);
+                obj.insert("upgrade".to_string(), serde_json::Value::Null);
             }
             entries.push(entry);
         }
@@ -457,6 +573,44 @@ pub fn write_ironlink_model_catalog(path: &std::path::Path, profiles: &[crate::m
     if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
     std::fs::write(path, serde_json::to_string_pretty(&catalog)?)?;
     info!("ironlink-model-catalog.json written ({} entries)", entries.len());
+    Ok(())
+}
+
+/// Generate a model catalog for an app with model replacement enabled.
+/// Uses the app's original model IDs as slugs and only replaces display names.
+/// Models without a display name replacement are excluded from the catalog.
+pub fn write_app_model_catalog(path: &std::path::Path, app: &crate::models::AppConfig) -> anyhow::Result<()> {
+    let template_text = include_str!("../resources/gpt5_5_template.json");
+    let template: serde_json::Value = serde_json::from_str(template_text)
+        .map_err(|e| anyhow::anyhow!("Failed to parse template: {e}"))?;
+
+    let mut entries = Vec::new();
+
+    for (idx, model_id) in app.models.iter().enumerate() {
+        // Only include models that have a non-empty display name replacement
+        let display_name = match app.model_display_names.get(model_id) {
+            Some(name) if !name.trim().is_empty() => name.trim().to_string(),
+            _ => continue,
+        };
+
+        let mut entry = template.clone();
+        if let Some(obj) = entry.as_object_mut() {
+            obj.insert("slug".to_string(), serde_json::json!(model_id));
+            obj.insert("display_name".to_string(), serde_json::json!(display_name));
+            obj.insert("description".to_string(), serde_json::json!(format!("IronLink model replacement: {}", display_name)));
+            obj.insert("priority".to_string(), serde_json::json!(1000 + idx));
+            obj.insert("additional_speed_tiers".to_string(), serde_json::json!([]));
+            obj.insert("service_tiers".to_string(), serde_json::json!([]));
+            obj.insert("availability_nux".to_string(), serde_json::Value::Null);
+            obj.insert("upgrade".to_string(), serde_json::Value::Null);
+        }
+        entries.push(entry);
+    }
+
+    let catalog = serde_json::json!({ "models": entries });
+    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
+    std::fs::write(path, serde_json::to_string_pretty(&catalog)?)?;
+    info!("app model catalog written ({} entries, model_replacement_enabled)", entries.len());
     Ok(())
 }
 

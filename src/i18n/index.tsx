@@ -180,6 +180,7 @@ const messages: Record<Lang, Record<string, string>> = {
     'add_mapping': '添加映射',
     'mappings_count': '{count} 个映射',
     'no_mappings_hint': '暂无映射',
+    'select_upstream_model': '选择上游模型',
     'preview_config': '预览配置',
 
     // Backend config
@@ -267,7 +268,6 @@ const messages: Record<Lang, Record<string, string>> = {
     'connectivity_ok_no_models': '连接成功，但未获取到模型列表',
     'connectivity_failed': '连接测试失败',
     'providers_desc': '管理上游 AI 供应商',
-    'select_upstream_model': '选择上游模型',
     'base_url': 'Base URL',
     'protocol': '协议',
     'config_dir': '应用配置目录',
@@ -285,6 +285,13 @@ const messages: Record<Lang, Record<string, string>> = {
     'inject_field_marketplaces': '市场配置',
     'config_snippet': '配置片段',
     'config_snippet_placeholder': '# 示例: model=gpt-4o, reasoning_effort=high, [model_providers.custom] base_url=https://...',
+    'model_replacement_enabled': '启用模型替换',
+    'model_replacement_desc': '启用后仅替换模型显示名称，不会使用自定义模型映射',
+    'model_replacement_label': '模型替换',
+    'model_display_names_desc': '设置每个模型的显示名称，留空则不显示该模型',
+    'model_display_name_placeholder': '输入显示名称…',
+    'will_display': '将显示',
+    'model_replacement_disabled_hint': '未启用',
   },
 
   en: {
@@ -323,6 +330,13 @@ const messages: Record<Lang, Record<string, string>> = {
     'inject_field_marketplaces': 'Marketplace config',
     'config_snippet': 'Config snippet',
     'config_snippet_placeholder': '# Example: model=gpt-4o, reasoning_effort=high, [model_providers.custom] base_url=https://...',
+    'model_replacement_enabled': 'Enable Model Replacement',
+    'model_replacement_desc': 'When enabled, only model display names are replaced; custom model mappings are not used',
+    'model_replacement_label': 'Model Replacement',
+    'model_display_names_desc': 'Set a display name for each model. Leave empty to exclude from the catalog',
+    'model_display_name_placeholder': 'Enter display name…',
+    'will_display': 'Will display',
+    'model_replacement_disabled_hint': 'Not enabled',
 
     // Applications
     'view_config': 'View Config',
@@ -349,6 +363,10 @@ const messages: Record<Lang, Record<string, string>> = {
     // Backend config
 
     // Model mappings
+    'model_mappings_desc': 'Map Codex models to upstream providers and models',
+    'no_mappings_hint': 'No mappings',
+    'select_upstream_model': 'Select upstream model',
+    'add_mapping': 'Add Mapping',
 
     // About
 

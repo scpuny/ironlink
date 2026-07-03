@@ -1,7 +1,7 @@
 //! Application (downstream client) configuration.
 //!
 //! An "app" is a downstream AI client that IronLink serves, e.g. Codex Desktop,
-//! Claude Desktop, Cursor. Each app bundles:
+//! Claude Desktop. Each app bundles:
 //!   - Connection protocol and model info
 //!   - Per-app model mappings (app_model → provider_id + upstream_model)
 //!   - Config injection (how to rewrite the app's config to point to IronLink)
@@ -29,6 +29,15 @@ pub struct AppConfig {
     /// Per-app model mappings: app model name → upstream provider + model
     #[serde(default)]
     pub model_mappings: HashMap<String, MappingTarget>,
+    /// When enabled, generates the model catalog using original model IDs with
+    /// replaced display names. model_mappings are NOT used in this mode.
+    /// Only models with a non-empty display name replacement appear in the catalog.
+    #[serde(default)]
+    pub model_replacement_enabled: bool,
+    /// Display name overrides for each model (model_id → display_name).
+    /// Only used when model_replacement_enabled is true.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub model_display_names: HashMap<String, String>,
     /// Custom TOML/JSON snippet to merge when injecting config (optional)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config_snippet: Option<String>,
@@ -52,7 +61,7 @@ pub struct AppInjection {
     pub backup_enabled: bool,
 
     /// Which top-level fields to inject into the config file.
-    /// - None (= default): inject all known fields (model, reason_effort, model_providers, etc.)
+    /// - None (= default): inject all known fields (model, reason_effort, model_catalog_json, etc.)
     /// - Some(list): only inject the specified fields.
     /// Supported field names: "model", "reasoning_effort", "model_catalog_json",
     /// "model_providers", "experimental_bearer_token", "marketplaces".

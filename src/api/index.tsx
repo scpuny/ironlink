@@ -130,6 +130,8 @@ export type AppData = {
   models: string[];
   config_injection: AppInjection | null;
   model_mappings: Record<string, { provider_id: string; upstream_model: string }>;
+  model_replacement_enabled: boolean;
+  model_display_names: Record<string, string>;
   config_snippet?: string;
 };
 

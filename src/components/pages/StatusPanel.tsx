@@ -138,6 +138,7 @@ export default function StatusPanel() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {apps.map(app => {
                   const mappingCount = Object.keys(app.model_mappings || {}).length;
+                  const models = app.models?.length ? app.models : null;
                   return (
                     <div key={app.id} style={{
                       display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
@@ -150,12 +151,39 @@ export default function StatusPanel() {
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         fontSize: 10, fontWeight: 700,
                       }}>{app.name.charAt(0)}</div>
-                      <Text style={{ fontSize: 12, fontWeight: 500, flex: 1 }} ellipsis>{app.name}</Text>
-                      <Tag style={{ margin: 0, fontSize: 9, lineHeight: '14px', padding: '0 5px', borderRadius: 3 }}>{protocolLabel(app.protocol)}</Tag>
-                      {mappingCount > 0 && <Text style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{mappingCount}m</Text>}
-                      <Tag color={app.enabled ? 'green' : 'default'} style={{ margin: 0, fontSize: 9, lineHeight: '14px', padding: '0 5px', borderRadius: 3 }}>
-                        {app.enabled ? t('enabled') : t('disabled')}
-                      </Tag>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Text style={{ fontSize: 12, fontWeight: 500 }} ellipsis>{app.name}</Text>
+                          <Tag style={{ margin: 0, fontSize: 9, lineHeight: '14px', padding: '0 5px', borderRadius: 3 }}>{protocolLabel(app.protocol)}</Tag>
+                          {app.model_replacement_enabled && mappingCount > 0 && (
+                            <Tag color="purple" style={{ margin: 0, fontSize: 9, lineHeight: '14px', padding: '0 5px', borderRadius: 3 }}>{t('model_replacement_label')}</Tag>
+                          )}
+                          <Tag color={app.enabled ? 'green' : 'default'} style={{ margin: 0, fontSize: 9, lineHeight: '14px', padding: '0 5px', borderRadius: 3, marginLeft: 'auto' }}>
+                            {app.enabled ? t('enabled') : t('disabled')}
+                          </Tag>
+                        </div>
+                        {app.model_replacement_enabled && mappingCount > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, marginTop: 2 }}>
+                            {Object.entries(app.model_mappings).slice(0, 3).map(([codex, target]) => (
+                              <Tag key={codex}  variant="filled" style={{ fontSize: 8, lineHeight: '14px', backgroundColor: 'var(--accent-bg)', borderRadius: 2, margin: 0 }}>
+                                {codex}<span style={{ opacity: 0.5 }}>→</span>{target.upstream_model}
+                              </Tag>
+                            ))}
+                            {mappingCount > 3 && <Text style={{ fontSize: 9, color: 'var(--text-tertiary)', lineHeight: '18px' }}>+{mappingCount - 3}</Text>}
+                          </div>
+                        ) : models && models.length > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, marginTop: 2 }}>
+                            {models.slice(0, 3).map(m => (
+                              <Tag key={m}  variant="filled"  style={{ fontSize: 8, lineHeight: '14px', borderRadius: 2, backgroundColor: 'var(--accent-bg)', margin: 0, fontFamily: 'monospace' }}>
+                                {m}
+                              </Tag>
+                            ))}
+                            {models.length > 3 && <Text style={{ fontSize: 9, color: 'var(--text-tertiary)', lineHeight: '18px' }}>+{models.length - 3}</Text>}
+                          </div>
+                        ) : (
+                          <Text style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{t('no_config')}</Text>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
