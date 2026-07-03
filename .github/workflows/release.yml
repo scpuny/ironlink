@@ -55,21 +55,21 @@ jobs:
 
       - name: Build Tauri (macOS ARM64)
         if: matrix.name == 'macos'
-        run: npx tauri build --target aarch64-apple-darwin
+        run: npm run tauri build --target aarch64-apple-darwin
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Build Tauri (macOS Intel)
         if: matrix.name == 'macos'
-        run: npx tauri build --target x86_64-apple-darwin
+        run: npm run tauri build --target x86_64-apple-darwin
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Build Tauri
         if: matrix.name != 'macos'
-        run: npx tauri build --target ${{ matrix.target }}
+        run: npm run tauri build --target ${{ matrix.target }}
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -144,7 +144,7 @@ jobs:
         run: npm ci
 
       - name: Build Tauri for ARM64
-        run: npx tauri build --target aarch64-unknown-linux-gnu --bundles deb,rpm
+        run: npm run tauri build --target aarch64-unknown-linux-gnu --bundles deb,rpm
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
