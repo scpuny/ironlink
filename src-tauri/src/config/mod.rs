@@ -285,10 +285,9 @@ fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &st
 
     // Set active model_provider and [model_providers.ironlink] table
     doc["model_provider"] = toml_edit::value("ironlink");
-    // [model_providers.ironlink] table
-    if !doc.contains_key("model_providers") {
-        doc["model_providers"] = toml_edit::table();
-    }
+    // [model_providers.ironlink] table - remove and recreate to avoid inline table issues
+    doc.remove("model_providers");
+    doc["model_providers"] = toml_edit::table();
     let ironlink_table = doc["model_providers"]["ironlink"]
         .or_insert(toml_edit::table());
     if let Some(t) = ironlink_table.as_table_mut() {
@@ -387,9 +386,9 @@ fn write_app_proxy_config(original: &str, default_model: &str, reasoning_effort:
             }
 
             if wants("model_providers") {
-                if !doc.contains_key("model_providers") {
-                    doc["model_providers"] = toml_edit::table();
-                }
+                // Remove and recreate to avoid inline table → explicit table conversion issues
+                doc.remove("model_providers");
+                doc["model_providers"] = toml_edit::table();
                 let ironlink_table = doc["model_providers"]["ironlink"]
                     .or_insert(toml_edit::table());
                 if let Some(t) = ironlink_table.as_table_mut() {
@@ -466,6 +465,9 @@ pub fn preview_app_config(original: &str, default_model: &str, reasoning_effort:
                 doc["model_provider"] = toml_edit::value("ironlink");
             }
             if wants("model_providers") {
+                // Remove and recreate to avoid inline table → explicit table conversion issues
+                doc.remove("model_providers");
+                doc["model_providers"] = toml_edit::table();
                 doc["model_providers"]["ironlink"]["name"] = toml_edit::value("IronLink");
                 doc["model_providers"]["ironlink"]["base_url"] = toml_edit::value(&proxy_url);
                 doc["model_providers"]["ironlink"]["wire_api"] = toml_edit::value("responses");
