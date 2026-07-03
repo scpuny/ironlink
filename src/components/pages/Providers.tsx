@@ -28,7 +28,7 @@ import { PRESETS } from '../../presets';
 import type { ProviderPreset } from '../../presets';
 import { useProfiles } from '../../hooks/useApi';
 import { useI18n } from '../../i18n';
-import { saveProfiles, fetchUpstreamModels } from '../../api';
+import { saveProfiles, fetchUpstreamModels, testProviderConnection } from '../../api';
 import type { RelayProfileData } from '../../api';
 
 const { Text, Title } = Typography;
@@ -168,26 +168,10 @@ export default function Providers() {
     if (!profile.apiKey) { antMsg.warning(t('fill_api_key')); return; }
     setTestingId(profile.id);
     try {
-      const url = (profile.baseUrl.replace(/\/+$/, '') + '/chat/completions').replace('/v1/v1/', '/v1/').replace('//chat', '/chat');
-      const body = {
-        model: profile.model || 'gpt-4o',
-        messages: [{ role: 'user', content: 'hi' }],
-        max_tokens: 10,
-      };
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + profile.apiKey,
-        },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + (await res.text()).slice(0, 100));
-      const json = await res.json();
-      const reply = json?.choices?.[0]?.message?.content || '(no content)';
+      const reply = await testProviderConnection(profile.baseUrl, profile.apiKey, profile.model || 'gpt-4o');
       antMsg.success(t('test_passed', { reply: reply.slice(0, 80) }));
     } catch (e: any) {
-      antMsg.error(t('test_failed', { msg: e.message }));
+      antMsg.error(t('test_failed', { msg: e.message || String(e) }));
     } finally {
       setTestingId(null);
     }

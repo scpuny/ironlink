@@ -129,6 +129,7 @@ pub fn run() {
             commands::profiles::save_profiles,
             commands::profiles::activate_profile,
             commands::models_cmd::fetch_upstream_models,
+            commands::models_cmd::test_provider_connection,
             commands::status::get_proxy_config,
             commands::status::set_proxy_config,
             commands::apps::get_apps,

@@ -153,6 +153,10 @@ export function setProxyConfig(config: import("../types").ProxyConfig): Promise<
   return tauriInvoke<void>('set_proxy_config', { config });
 }
 
+export function testProviderConnection(baseUrl: string, apiKey: string, model: string): Promise<string> {
+  return tauriInvoke<string>('test_provider_connection', { baseUrl, apiKey, model });
+}
+
 export function fetchUpstreamModels(url: string, apiKey: string): Promise<string[]> {
   return tauriInvoke<string[]>('fetch_upstream_models', { url, apiKey }).catch(e => {
     throw new Error(typeof e === 'string' ? e : e?.message || String(e));
