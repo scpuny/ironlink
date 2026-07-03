@@ -160,19 +160,21 @@ pub fn run() {
                     if enabled {
                         tracing::info!("Stopping proxy server...");
                         crate::stop_proxy_server(s.clone()).await;
-                    }
 
-                    // ── 2. Restore ALL backed-up app configs (not just when proxy was on) ──
-                    let apps = s.apps.lock().await.clone();
-                    for app in apps.iter().filter(|a| a.config_injection.is_some()) {
-                        if let Some(inj) = &app.config_injection {
-                            if inj.backup_enabled {
-                                crate::config::restore_app_config(inj);
+                        // ── 2. Restore backed-up app configs only when proxy was ON ──
+                        // When proxy was disabled normally, toggle_proxy(false) already restored backups.
+                        // This is a safety net for crashes / unclean exits.
+                        let apps = s.apps.lock().await.clone();
+                        for app in apps.iter().filter(|a| a.config_injection.is_some()) {
+                            if let Some(inj) = &app.config_injection {
+                                if inj.backup_enabled {
+                                    crate::config::restore_app_config(inj);
+                                }
                             }
                         }
+                        // Legacy fallback
+                        crate::config::restore_codex_configs();
                     }
-                    // Legacy fallback
-                    crate::config::restore_codex_configs();
 
                     tracing::info!("Cleanup complete on exit");
                 });

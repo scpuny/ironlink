@@ -6,13 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
-## v0.1.1 (2026-07-03)
+## v0.3.0 (2026-07-03)
+
+### 新功能 / New Features
+- **模型映射编辑器** — 应用编辑页面新增模型映射 UI，选择供应商 → 选择模型，直观配置映射关系
+  Model mapping editor in app edit form: select provider → select model, visually configure mappings
+- **映射版模型目录** — 启用模型替换时，仅生成已配置映射的模型到 `ironlink-model-catalog.json`，slug 为原始模型名
+  Mapped model catalog: when model replacement is enabled, only mapped models appear in catalog, slug is the original model name
+- **首页应用卡片增强** — 根据实际情况显示模型列表或模型映射标签
+  Enhanced app cards on overview page: display models or mapping tags based on configuration
 
 ### 修复 / Bug Fixes
-- **保留 context_window 字段** — 修复因删除 `context_window`/`max_context_window` 导致 Codex 不压缩对话、payload 超限的问题
-  Retain `context_window`/`max_context_window` in model catalog; fixes Codex conversation truncation
-- **修复 CI 构建** — 添加 `@tauri-apps/cli` 依赖；`npm run tauri build` 使用 `--` 分隔符传递 target 参数
-  Fix CI builds: add `@tauri-apps/cli` dependency, use `--` separator for target args
+- **写入 `model_providers` 丢失修复** — `doc["model_providers"]["ironlink"]` 访问前先创建显式表，避免 toml_edit 渲染为空 `{}`
+  Fix `model_providers` being written as empty `{}`: ensure explicit table creation before setting nested keys
+- **`model_provider` 改为 `ironlink`** — 从 `custom` 改为 `ironlink`，避免与其他供应商冲突
+  Change `model_provider` value from `custom` to `ironlink` to avoid conflicts
+- **禁用代理时删除模型目录** — 关闭代理后自动删除 `ironlink-model-catalog.json`，让 Codex 使用自有模型
+  Delete model catalog when disabling proxy, so Codex reverts to its own models
+- **应用默认模型修正** — config.toml 中的默认模型使用应用配置中的值，而非全局代理配置
+  Use app-specific `default_model` for config injection instead of global proxy config
+- **退出时条件性恢复** — 只在配置仍包含 IronLink 设置时才从备份恢复，避免覆盖用户手动修改的配置
+  Conditional restore on exit: only restore from backup if config still contains IronLink proxy settings
+- **查看配置路径修正** — `get_app_config_files` 使用与实际写入一致的路径函数
+  Fix config viewer paths: use same path functions as actual write operations
+- **模型选择器去重** — 上游模型下拉列表使用 `Set` 去重
+  Deduplicate upstream model options using `Set`
+- **映射目录移除 context_window** — 映射版 catalog 不写入硬编码上下文窗口，让 Codex 使用自有默认值
+  Remove `context_window` from mapped catalog entries, let Codex use its own defaults
 
 ---
 
@@ -50,15 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Updated model catalog template with missing fields aligned to official format
 - **代理进程管理** — 应用关闭时正确终止后端代理进程
   Properly terminate proxy backend process on app shutdown
-
----
-## v0.1.1 (2026-07-03)
-
-### 修复 / Bug Fixes
-- **保留 context_window 字段** — 修复因删除 `context_window`/`max_context_window` 导致 Codex 不压缩对话、payload 超限的问题
-  Retain `context_window`/`max_context_window` in model catalog; fixes Codex conversation truncation
-- **修复 CI 构建** — 添加 `@tauri-apps/cli` 依赖；`npm run tauri build` 使用 `--` 分隔符传递 target 参数
-  Fix CI builds: add `@tauri-apps/cli` dependency, use `--` separator for target args
 
 ---
 

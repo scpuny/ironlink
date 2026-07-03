@@ -201,6 +201,55 @@ pub fn restore_codex_configs() {
     }
 }
 
+/// Check if a config file still contains IronLink proxy settings.
+/// If `model_provider` is "ironlink" or `model_providers.ironlink` exists with the
+/// proxy URL, the config is still "managed" by IronLink and needs restoration.
+pub fn config_has_ironlink_settings(content: &str) -> bool {
+    if let Ok(doc) = content.parse::<toml_edit::DocumentMut>() {
+        // Check model_provider == "ironlink"
+        if let Some(v) = doc.get("model_provider").and_then(|v| v.as_str()) {
+            if v == "ironlink" { return true; }
+        }
+        // Check model_providers.ironlink.base_url contains "127.0.0.1" or ironlink proxy
+        if let Some(custom) = doc.get("model_providers").and_then(|t| t.get("ironlink")) {
+            if let Some(url) = custom.get("base_url").and_then(|v| v.as_str()) {
+                if url.contains("127.0.0.1") || url.contains("localhost") {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Restore from backup only if the current config still has IronLink proxy settings.
+/// This prevents overwriting a config the user has already switched away from.
+pub fn restore_app_config_if_ironlink(inj: &crate::models::AppInjection) {
+    let config_path = std::path::Path::new(&inj.config_path);
+    if config_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(config_path) {
+            if !config_has_ironlink_settings(&content) {
+                info!("Skipping restore for {:?}: config no longer uses IronLink proxy", config_path);
+                return;
+            }
+        }
+    }
+    restore_app_config(inj);
+}
+
+pub fn restore_codex_configs_if_ironlink() {
+    let codex_path = codex_config_path(None);
+    if codex_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&codex_path) {
+            if !config_has_ironlink_settings(&content) {
+                info!("Skipping legacy restore: Codex config no longer uses IronLink proxy");
+                return;
+            }
+        }
+    }
+    restore_codex_configs();
+}
+
 fn codex_config_path(override_dir: Option<&str>) -> PathBuf {
     match override_dir {
         Some(dir) => PathBuf::from(dir).join("config.toml"),
@@ -235,9 +284,12 @@ fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &st
     doc["model_catalog_json"] = toml_edit::value(crate::config::model_catalog_path().to_string_lossy().as_ref());
 
     // Set active model_provider and [model_providers.ironlink] table
-    doc["model_provider"] = toml_edit::value("custom");
+    doc["model_provider"] = toml_edit::value("ironlink");
     // [model_providers.ironlink] table
-    let ironlink_table = doc["model_providers"]["custom"]
+    if !doc.contains_key("model_providers") {
+        doc["model_providers"] = toml_edit::table();
+    }
+    let ironlink_table = doc["model_providers"]["ironlink"]
         .or_insert(toml_edit::table());
     if let Some(t) = ironlink_table.as_table_mut() {
         t.set_implicit(true);
@@ -331,11 +383,14 @@ fn write_app_proxy_config(original: &str, default_model: &str, reasoning_effort:
             }
 
             if wants("model_provider") {
-                doc["model_provider"] = toml_edit::value("custom");
+                doc["model_provider"] = toml_edit::value("ironlink");
             }
 
             if wants("model_providers") {
-                let ironlink_table = doc["model_providers"]["custom"]
+                if !doc.contains_key("model_providers") {
+                    doc["model_providers"] = toml_edit::table();
+                }
+                let ironlink_table = doc["model_providers"]["ironlink"]
                     .or_insert(toml_edit::table());
                 if let Some(t) = ironlink_table.as_table_mut() {
                     t.set_implicit(true);
@@ -408,7 +463,7 @@ pub fn preview_app_config(original: &str, default_model: &str, reasoning_effort:
                 doc["model_catalog_json"] = toml_edit::value(crate::config::model_catalog_path().to_string_lossy().as_ref());
             }
             if wants("model_provider") {
-                doc["model_provider"] = toml_edit::value("custom");
+                doc["model_provider"] = toml_edit::value("ironlink");
             }
             if wants("model_providers") {
                 doc["model_providers"]["ironlink"]["name"] = toml_edit::value("IronLink");
