@@ -473,9 +473,6 @@ fn preview_model_catalog(profiles: &[crate::models::RelayProfile], app: &crate::
             obj.insert("service_tiers".to_string(), serde_json::json!([]));
             obj.insert("availability_nux".to_string(), serde_json::Value::Null);
             obj.insert("upgrade".to_string(), serde_json::Value::Null);
-            // Remove context window fields - let Codex use its own defaults
-            obj.remove("context_window");
-            obj.remove("max_context_window");
         }
         entries.push(entry);
     }
@@ -488,9 +485,6 @@ fn preview_model_catalog(profiles: &[crate::models::RelayProfile], app: &crate::
 /// Only models that have a mapping entry appear in the catalog.
 /// Slug = the original Codex model name (key), display_name = providerId/upstream_model.
 ///
-/// NOTE: context_window / max_context_window are intentionally NOT set here
-/// because different upstream models have different context limits and we
-/// don't want Codex to assume a wrong value. Codex will use its own defaults.
 pub fn write_mapped_model_catalog(path: &std::path::Path, app: &crate::models::AppConfig, profiles: &[crate::models::RelayProfile]) -> anyhow::Result<()> {
     let template_text = include_str!("../resources/gpt5_5_template.json");
     let template: serde_json::Value = serde_json::from_str(template_text)
@@ -517,9 +511,6 @@ pub fn write_mapped_model_catalog(path: &std::path::Path, app: &crate::models::A
             obj.insert("service_tiers".to_string(), serde_json::json!([]));
             obj.insert("availability_nux".to_string(), serde_json::Value::Null);
             obj.insert("upgrade".to_string(), serde_json::Value::Null);
-            // Remove context window fields inherited from template - let Codex decide
-            obj.remove("context_window");
-            obj.remove("max_context_window");
         }
         entries.push(entry);
     }
