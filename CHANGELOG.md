@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## v0.1.1 (2026-07-03)
+
+### 修复 / Bug Fixes
+- **保留 context_window 字段** — 修复因删除 `context_window`/`max_context_window` 导致 Codex 不压缩对话、payload 超限的问题
+  Retain `context_window`/`max_context_window` in model catalog; fixes Codex conversation truncation
+- **修复 CI 构建** — 添加 `@tauri-apps/cli` 依赖；`npm run tauri build` 使用 `--` 分隔符传递 target 参数
+  Fix CI builds: add `@tauri-apps/cli` dependency, use `--` separator for target args
+
+---
+
 
 ## v0.1.0 (2026-07-03)
 
@@ -42,6 +52,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Properly terminate proxy backend process on app shutdown
 
 ---
+## v0.1.1 (2026-07-03)
+
+### 修复 / Bug Fixes
+- **保留 context_window 字段** — 修复因删除 `context_window`/`max_context_window` 导致 Codex 不压缩对话、payload 超限的问题
+  Retain `context_window`/`max_context_window` in model catalog; fixes Codex conversation truncation
+- **修复 CI 构建** — 添加 `@tauri-apps/cli` 依赖；`npm run tauri build` 使用 `--` 分隔符传递 target 参数
+  Fix CI builds: add `@tauri-apps/cli` dependency, use `--` separator for target args
+
+---
+
 
 ## v0.0.1 (Pre-release)
 
