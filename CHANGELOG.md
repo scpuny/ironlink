@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ---
-## v0.3.3 (2026-07-03)
+## v0.3.3 (2026-07-05)
+
+### 修复 / Bug Fixes
+- **修复 context_window/max_context_window 参数未生效** — 所有 `toggle_proxy`、catalog 写入函数签名缺失 `models` 参数导致编译错误
+- **修复 v0.3.3 标签打包失败** — GitHub Actions macOS runner 缺少 `create-dmg`，在 workflow 中 `brew install create-dmg`
+  Fix DMG bundling on macOS CI: install `create-dmg` via Homebrew
+
+### 新功能 / New Features
+- **日志时间戳 + 自动滚动** — 日志写入自动添加 `[HH:MM:SS.mmm]` 时间戳前缀，LogViewer 自动滚动到底部，仅日志区域滚动
+  Log timestamps and auto-scroll: prepend `[HH:MM:SS.mmm]` on each log line, auto-scroll log container
+- **供应商模型列表支持上下文窗口配置** — 在供应商编辑页面，以表格形式展示模型列表，每行可配置 `context_window`、`max_context_window`、`input_modalities`（文本/图片/视觉标签切换）
+  Per-model context window config in provider editor: table layout with editable context_window, max_context_window, and modality toggles
 
 ### 修复 / Bug Fixes
 - **彻底修复 `model_providers` 写入为空 `{}`** — 写入前先 `doc.remove("model_providers")` 打破内联表循环，确保输出 `[model_providers.ironlink]` 表头格式

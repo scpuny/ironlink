@@ -50,6 +50,10 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev patchelf \
             libssl-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
 
+      - name: Install Homebrew dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install create-dmg
+
       - name: Install frontend dependencies
         run: npm ci
 
@@ -139,6 +143,7 @@ jobs:
           echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++" >> $GITHUB_ENV
           echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+
 
       - name: Install frontend dependencies
         run: npm ci
