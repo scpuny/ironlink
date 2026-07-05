@@ -4,15 +4,6 @@ All notable changes to IronLink will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
----
-## v0.3.1 (2026-07-03)
-
-### 修复 / Bug Fixes
-- **修复 `model_providers` 写入为空 `{}`** — 彻底解决 toml_edit 内联表渲染问题，先 `remove` 再重新创建显式表
-  Fix `model_providers` being written as empty `{}`: remove and recreate table to avoid inline table rendering issues
-
----
 ---
 ## v0.3.2 (2026-07-03)
 
@@ -21,6 +12,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Fix `model_providers` written as empty `{}`: chained index auto-creates inline table in `toml_edit`, explicit `doc["model_providers"] = toml_edit::table()` now ensures proper serialization
 
 ---
+
+---
+## v0.3.3 (2026-07-03)
+
+### 修复 / Bug Fixes
+- **彻底修复 `model_providers` 写入为空 `{}`** — 写入前先 `doc.remove("model_providers")` 打破内联表循环，确保输出 `[model_providers.ironlink]` 表头格式
+  Fix `model_providers` being written as empty `{}`: remove before write to break the inline-table rendering cycle, ensuring proper `[model_providers.ironlink]` table header format
+
+### 新功能 / New Features
+- **OCR 功能集成** — 在代理中拦截并识别图片中的文字内容
+  OCR feature: intercept and recognize text from images in proxy
+
+---
+
+## v0.3.1 (2026-07-03)
+
+### 修复 / Bug Fixes
+- **修复 `model_providers` 写入为空 `{}`** — 彻底解决 toml_edit 内联表渲染问题，先 `remove` 再重新创建显式表
+  Fix `model_providers` being written as empty `{}`: remove and recreate table to avoid inline table rendering issues
+
+---
+
 
 
 
