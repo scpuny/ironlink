@@ -1,79 +1,86 @@
 {
-    "slug": "gpt-5.5",
-    "display_name": "GPT-5.5",
-    "description": "IronLink proxy model \u2014 configured through provider settings",
-    "default_reasoning_level": "medium",
-    "supported_reasoning_levels": [
-        {
-            "effort": "low",
-            "description": "Fast responses with lighter reasoning"
-        },
-        {
-            "effort": "medium",
-            "description": "Balances speed and reasoning depth for everyday tasks"
-        },
-        {
-            "effort": "high",
-            "description": "Greater reasoning depth for complex problems"
-        },
-        {
-            "effort": "xhigh",
-            "description": "Extra high reasoning depth for complex problems"
-        }
-    ],
-    "shell_type": "shell_command",
-    "visibility": "list",
-    "supported_in_api": true,
-    "priority": 0,
-    "additional_speed_tiers": [
-        "fast"
-    ],
-    "base_instructions": "",
-    "supports_reasoning_summaries": true,
-    "default_reasoning_summary": "none",
-    "support_verbosity": true,
-    "default_verbosity": "low",
-    "web_search_tool_type": "text_and_image",
-    "truncation_policy": {
-        "mode": "tokens",
-        "limit": 10000
+  "slug": "gpt-5.5",
+  "display_name": "GPT-5.5",
+  "description": "IronLink proxy model — configured through provider settings",
+  "default_reasoning_level": "medium",
+  "supported_reasoning_levels": [
+    {
+      "effort": "low",
+      "description": "Fast responses with lighter reasoning"
     },
-    "supports_parallel_tool_calls": true,
-    "supports_image_detail_original": true,
-    "effective_context_window_percent": 95,
-    "input_modalities": [
-        "text",
-        "image"
-    ],
-    "supports_search_tool": true,
-    "use_responses_lite": false,
-    "apply_patch_tool_type": "freeform",
-    "auto_review_model_override": null,
-    "service_tiers": [
-        {
-            "id": "priority",
-            "name": "Fast",
-            "description": "1.5x speed, increased usage"
-        }
-    ],
-    "availability_nux": {
-        "message": "IronLink proxy model \u2014 configured through IronLink settings."
+    {
+      "effort": "medium",
+      "description": "Balances speed and reasoning depth for everyday tasks"
     },
-    "upgrade": null,
-    "context_window": 272000,
-    "max_context_window": 272000,
-    "experimental_supported_tools": [],
-    "model_messages": {
-        "instructions_template": "You are IronLink, an AI coding assistant. You help users with coding tasks through the IronLink proxy gateway.\n\n{{ personality }}\n\nYou are a helpful, concise, and accurate coding assistant.\n",
-        "instructions_variables": {
-            "personality_default": "",
-            "personality_friendly": "\nYou are warm, curious, and collaborative. You keep the user informed and engaged throughout the conversation.\n",
-            "personality_pragmatic": "\nYou are pragmatic and efficient. You focus on getting the job done with minimal ceremony.\n"
-        }
+    {
+      "effort": "high",
+      "description": "Greater reasoning depth for complex problems"
     },
-    "auto_compact_token_limit": 115000,
-    "prefer_websockets": true,
-    "minimal_client_version": "0.98.0",
-    "reasoning_summary_format": "experimental",
-    "include_skills_usage_instructions": false
+    {
+      "effort": "xhigh",
+      "description": "Extra high reasoning depth for complex problems"
+    }
+  ],
+  "available_in_plans": [
+    "business",
+    "edu",
+    "education",
+    "enterprise",
+    "free",
+    "free_workspace",
+    "go",
+    "k12"
+  ],
+  "shell_type": "shell_command",
+  "visibility": "list",
+  "supported_in_api": true,
+  "priority": 0,
+  "additional_speed_tiers": [
+    "fast"
+  ],
+  "base_instructions": "",
+  "supports_reasoning_summaries": true,
+  "default_reasoning_summary": "none",
+  "support_verbosity": true,
+  "default_verbosity": "low",
+  "web_search_tool_type": "text_and_image",
+  "truncation_policy": {
+    "mode": "tokens",
+    "limit": 10000
+  },
+  "supports_parallel_tool_calls": true,
+  "supports_image_detail_original": true,
+  "input_modalities": [
+    "text",
+    "image"
+  ],
+  "supports_search_tool": true,
+  "apply_patch_tool_type": "freeform",
+  "service_tiers": [
+    {
+      "id": "priority",
+      "name": "Fast",
+      "description": "1.5x speed, increased usage"
+    }
+  ],
+  "availability_nux": {
+    "message": "IronLink proxy model — configured through IronLink settings."
+  },
+  "upgrade": null,
+  "context_window": 272000,
+  "max_context_window": 272000,
+  "experimental_supported_tools": [],
+  "model_messages": {
+    "instructions_template": "You are IronLink, an AI coding assistant. You help users with coding tasks through the IronLink proxy gateway.\n\n{{ personality }}\n\nYou are a helpful, concise, and accurate coding assistant.\n",
+    "instructions_variables": {
+      "personality_default": "",
+      "personality_friendly": "\nYou are warm, curious, and collaborative. You keep the user informed and engaged throughout the conversation.\n",
+      "personality_pragmatic": "\nYou are pragmatic and efficient. You focus on getting the job done with minimal ceremony.\n"
+    }
+  },
+  "auto_compact_token_limit": null,
+  "prefer_websockets": true,
+  "minimal_client_version": "0.98.0",
+  "reasoning_summary_format": "experimental",
+  "include_skills_usage_instructions": false
 }

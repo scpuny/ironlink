@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ---
+## v0.3.5 (2026-07-05)
+
+### 严重修复 / Critical Fixes
+- **修复上下文压缩后 bug 修复被遗忘** — Codex 压缩上下文时丢弃了 `instructions` 和 `tools` 字段，压缩后不知道自己的工具定义和指令集，导致已修复的 bug 又被重新"修复"。现已将 `instructions` 和 `tools` 加入 `copy_original_fields`，每个 `response.completed` 事件携带这些关键字段（对齐 CodexPlusPlus 行为）
+  Fix bug-fix forgotten after context compaction: `instructions` and `tools` were excluded from `copy_original_fields`, so after compaction Codex lost tool definitions and instructions. Now these fields are included in every `response.completed` event (matching CodexPlusPlus behavior)
+- **添加 `custom_tool_call_input.delta` SSE 事件** — Codex 在 context compaction 后需要 `custom_tool_call_input.delta` 事件来追踪 custom tool 的参数状态，缺失该事件导致工具调用状态不完整
+  Add `custom_tool_call_input.delta` SSE event: required by Codex to track custom tool argument state after context compaction
+
+### 重大配置修正 / Critical Config Changes
+- **`auto_compact_token_limit` 改为 `null`** — 之前设为 `115000`（95% of 272K），强制过早触发压缩。官方 models.json 内置模型该值均为 `null`（由 Codex 自行管理）。移除后可在 272K 满窗口后才压缩，显著减少压缩频率
+  Change `auto_compact_token_limit` to `null`: previously set to 115000 (95% of 272K) forcing premature compaction. Official models.json sets this to `null` for all built-in models, letting Codex manage compaction naturally
+- **移除 `effective_context_window_percent`** — 该字段非官方标准字段，移除后 Codex 使用默认 100% 有效窗口，不再因 95% 截断而提前消耗上下文
+  Remove `effective_context_window_percent`: not an official field. Codex now uses 100% effective window instead of 95% truncation
+
+### 模型模板对齐 / Model Template Alignment
+- **新增 `available_in_plans`** — 从官方 models.json 同步该字段，Codex 据此判断模型在哪些计划中可用。缺失此字段可能导致模型在部分场景不被识别
+  Add `available_in_plans`: synced from official models.json, determines which plans can access the model
+- **移除 `use_responses_lite` 和 `auto_review_model_override`** — 这两个字段不在官方 models.json 中，属于遗留的无关字段
+  Remove `use_responses_lite` and `auto_review_model_override`: extraneous fields not present in official models.json
+
+---
+
 
 ## v0.3.4 (2026-07-05)
 

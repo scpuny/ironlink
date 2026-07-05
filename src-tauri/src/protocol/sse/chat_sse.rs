@@ -494,7 +494,16 @@ impl ChatSseState {
             state.done = true;
             self.output_items.push((oi, item.clone()));
 
-            if !is_custom {
+            if is_custom {
+                // Codex needs the custom_tool_call_input.delta to track the arguments
+                push_sse(out, "response.custom_tool_call_input.delta", serde_json::json!({
+                    "type": "response.custom_tool_call_input.delta",
+                    "item_id": format!("ctc_{}", state.call_id),
+                    "call_id": state.call_id,
+                    "output_index": oi,
+                    "delta": state.arguments
+                }));
+            } else {
                 push_sse(out, SSE_FUNC_ARGS_DONE, serde_json::json!({"type": SSE_FUNC_ARGS_DONE, "item_id": &state.item_id, "output_index": oi, "arguments": &state.arguments}));
             }
 
@@ -532,13 +541,15 @@ fn json_response(_event: &str, status: &str, state: &ChatSseState) -> Value {
 }
 
 /// Copy safe scalar fields from the original request into the response.
-/// NOTE: tools and instructions are NOT copied — they are request parameters,
-/// not response fields. Copying them (especially tool schemas) into every
-/// response.completed event would bloat the conversation history massively.
+/// Copy safe passthrough fields from the original request into the response.
+/// tools and instructions are intentionally included — Codex Desktop needs them
+/// in response.completed to track conversation state across context compaction.
+/// (Matches CodexPlusPlus behavior.)
 fn copy_original_fields(response: &mut Value, orig: Option<&Value>) {
     let Some(orig) = orig else { return; };
-    for key in ["max_output_tokens", "parallel_tool_calls", "previous_response_id",
-                 "reasoning", "temperature", "tool_choice", "top_p", "metadata"] {
+    for key in ["instructions", "max_output_tokens", "parallel_tool_calls",
+                 "previous_response_id", "reasoning", "temperature",
+                 "tool_choice", "tools", "top_p", "metadata"] {
         if let Some(v) = orig.get(key) { response[key] = v.clone(); }
     }
 }
