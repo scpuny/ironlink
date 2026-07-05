@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ---
+
+## v0.3.4 (2026-07-05)
+
+### 修复 / Bug Fixes
+- **修复 SSE 流式转换中 apply_patch 子工具名映射丢失** — `CodexToolContext` 未注册 `apply_patch_add_file` 等子工具，导致 Chat API 返回的工具调用被以 `function_call` 格式发出，Codex 无法路由到 custom tool 处理器，工具执行被静默丢弃，修复被无效重试覆盖
+  Fix apply_patch sub-tool name mapping lost in SSE streaming: register sub-tools (add_file, delete_file, etc.) so the SSE converter emits `custom_tool_call` with the original name instead of an unrecognizable `function_call`
+
+### 性能优化 / Performance
+- **消除 `copy_original_fields` 导致的上下文膨胀** — `response.completed` 不再复制 `tools`（含完整 schema）和 `instructions`，每轮响应减少数百字节。配合 `auto_compact_token_limit` 使上下文不再飙升至 122K
+  Remove `tools` and `instructions` from `copy_original_fields`: the tool schemas (e.g. apply_patch format definition) bloated every SSE response, compounding across turns. Now responses carry only scalar passthrough fields
+
+### 新功能 / New Features
+- **新增 `auto_compact_token_limit: 115000`** — 模板和模型目录生成添加该字段，配合 `effective_context_window_percent: 95`，Codex 可在 115K token 时触发自动上下文压缩，避免无限制膨胀
+  Add `auto_compact_token_limit: 115000` to model template and catalog generation; works with `effective_context_window_percent: 95` to trigger compaction at 115K tokens
+
+### 改进 / Improvements
+- **同步官方 models.json 字段** — 新增 `prefer_websockets`、`minimal_client_version`、`reasoning_summary_format`、`include_skills_usage_instructions` 及 `xhigh` 推理等级
+  Sync missing fields from official models.json: add `prefer_websockets`, `minimal_client_version`, `reasoning_summary_format`, `include_skills_usage_instructions`, and `xhigh` reasoning effort level
+
+---
 ## v0.3.3 (2026-07-05)
 
 ### 修复 / Bug Fixes
@@ -27,8 +47,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 新功能 / New Features
 - **OCR 功能集成** — 在代理中拦截并识别图片中的文字内容
   OCR feature: intercept and recognize text from images in proxy
-
----
 
 ---
 ## v0.3.2 (2026-07-03)

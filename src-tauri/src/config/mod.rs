@@ -575,6 +575,9 @@ pub fn write_mapped_model_catalog(path: &std::path::Path, app: &crate::models::A
             if let Some(cw) = me.context_window {
                 if let Some(obj) = entry.as_object_mut() {
                     obj.insert("context_window".to_string(), serde_json::json!(cw));
+                    // auto_compact_token_limit = context_window * effective_context_window_percent / 100
+                    let ecwp = obj.get("effective_context_window_percent").and_then(|v| v.as_i64()).unwrap_or(95);
+                    obj.insert("auto_compact_token_limit".to_string(), serde_json::json!(cw * ecwp / 100));
                 }
             }
             if let Some(mcw) = me.max_context_window {
@@ -640,6 +643,9 @@ pub fn write_ironlink_model_catalog(path: &std::path::Path, profiles: &[crate::m
             }) {
                 if let Some(obj) = entry.as_object_mut() {
                     obj.insert("context_window".to_string(), serde_json::json!(cw));
+                    // auto_compact_token_limit = context_window * effective_context_window_percent / 100
+                    let ecwp = obj.get("effective_context_window_percent").and_then(|v| v.as_i64()).unwrap_or(95);
+                    obj.insert("auto_compact_token_limit".to_string(), serde_json::json!(cw * ecwp / 100));
                 }
             }
             // 2. max_context_window

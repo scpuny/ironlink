@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button, Input, Typography, Tag, message as antMsg, Tooltip, Switch, Card, Checkbox, Select } from 'antd';
 import {
   PlusOutlined, EditOutlined, CopyOutlined,
@@ -134,6 +134,8 @@ export default function Providers() {
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<RelayProfile | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
   useEffect(() => {
     if (profilesData) {
@@ -183,11 +185,9 @@ export default function Providers() {
   };
 
   const handleToggleEnabled = (id: string, on: boolean) => {
-    setProfiles(prev => {
-      const next = prev.map(p => p.id === id ? { ...p, enabled: on } : p);
-      persistProfiles(next);
-      return next;
-    });
+    const next = profiles.map(p => p.id === id ? { ...p, enabled: on } : p);
+    persistProfiles(next);
+    setProfiles(next);
   };
 
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -211,25 +211,21 @@ export default function Providers() {
     if (!over || active.id === over.id) return;
     const fromId = String(active.id);
     const toId = String(over.id);
-    setProfiles(prev => {
-      const next = [...prev];
-      const fromIdx = next.findIndex(p => p.id === fromId);
-      const toIdx = next.findIndex(p => p.id === toId);
-      if (fromIdx < 0 || toIdx < 0) return prev;
-      const [moved] = next.splice(fromIdx, 1);
-      next.splice(toIdx, 0, moved);
-      persistProfiles(next);
-      return next;
-    });
+    const next = [...profiles];
+    const fromIdx = next.findIndex(p => p.id === fromId);
+    const toIdx = next.findIndex(p => p.id === toId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    persistProfiles(next);
+    setProfiles(next);
   };
 
   const handleRemove = (id: string) => {
-    setProfiles(prev => {
-      const next = prev.filter(p => p.id !== id);
-      if (next.length === 0) return prev; // don't remove last
-      persistProfiles(next);
-      return next;
-    });
+    const next = profiles.filter(p => p.id !== id);
+    if (next.length === 0) return; // don't remove last
+    persistProfiles(next);
+    setProfiles(next);
     if (editingId === id) { setEditingId(null); setDraft(null); }
   };
 
@@ -240,12 +236,12 @@ export default function Providers() {
   };
 
   const handleSaveEdit = () => {
-    if (!draft) return;
-    setProfiles(prev => {
-      const next = prev.map(p => p.id === draft.id ? draft : p);
-      persistProfiles(next);
-      return next;
-    });
+    const d = draftRef.current;
+    if (!d) return;
+    // Merge draft into profiles list, then persist + update state
+    const updated = profiles.map(p => p.id === d.id ? d : p);
+    persistProfiles(updated);
+    setProfiles(updated);
     setEditingId(null);
     setDraft(null);
   };

@@ -111,13 +111,16 @@ impl SseTransform for ChatSseConverter {
 /// Check if the tool name corresponds to a custom tool (e.g. web_search).
 
 /// Build output item for a custom tool call (different format from function_call).
-fn custom_tool_output_item(state: &ToolCallState) -> Value {
+/// Restores the original tool name (e.g.  for )
+/// so Codex Desktop can route it to the correct custom tool handler.
+fn custom_tool_output_item(state: &ToolCallState, ctx: &CodexToolContext) -> Value {
+    let original_name = ctx.original_custom_tool_name(&state.name);
     serde_json::json!({
         "id": format!("ctc_{}", state.call_id),
         "type": "custom_tool_call",
         "status": "completed",
         "call_id": state.call_id,
-        "name": state.name,
+        "name": original_name,
         "input": state.arguments,
     })
 }
@@ -374,12 +377,14 @@ impl ChatSseState {
             state.added = true;
 
             let is_custom = self.tool_context.is_custom_tool_proxy(&state.name);
+            let original_name = self.tool_context.original_custom_tool_name(&state.name);
             let item_type = if is_custom { "custom_tool_call" } else { "function_call" };
+            let name_for_sse = if is_custom { &original_name } else { &state.name };
 
             push_sse(out, SSE_OUTPUT_ITEM_ADDED, serde_json::json!({
                 "type": SSE_OUTPUT_ITEM_ADDED, "output_index": assigned,
                 "item": {"id": &state.item_id, "type": item_type, "status": "in_progress",
-                         "call_id": &state.call_id, "name": &state.name,
+                         "call_id": &state.call_id, "name": name_for_sse,
                          "arguments": "", "input": ""}
             }));
         }
@@ -478,7 +483,7 @@ impl ChatSseState {
 
             let is_custom = self.tool_context.is_custom_tool_proxy(&state.name);
             let item = if is_custom {
-                custom_tool_output_item(state)
+                custom_tool_output_item(state, &self.tool_context)
             } else {
                 serde_json::json!({
                     "id": &state.item_id, "type": "function_call", "status": "completed",
@@ -526,11 +531,14 @@ fn json_response(_event: &str, status: &str, state: &ChatSseState) -> Value {
     })
 }
 
-/// Copy passthrough fields from the original request into the response.
+/// Copy safe scalar fields from the original request into the response.
+/// NOTE: tools and instructions are NOT copied — they are request parameters,
+/// not response fields. Copying them (especially tool schemas) into every
+/// response.completed event would bloat the conversation history massively.
 fn copy_original_fields(response: &mut Value, orig: Option<&Value>) {
     let Some(orig) = orig else { return; };
-    for key in ["instructions", "max_output_tokens", "parallel_tool_calls", "previous_response_id",
-                 "reasoning", "temperature", "tool_choice", "tools", "top_p", "metadata"] {
+    for key in ["max_output_tokens", "parallel_tool_calls", "previous_response_id",
+                 "reasoning", "temperature", "tool_choice", "top_p", "metadata"] {
         if let Some(v) = orig.get(key) { response[key] = v.clone(); }
     }
 }

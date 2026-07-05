@@ -10,6 +10,11 @@ struct CustomToolSpec {
     built_in: bool,
 }
 
+/// Sub-tool suffixes split from `apply_patch` for Chat Completions proxy.
+const APPLY_PATCH_SUB_TOOLS: &[&str] = &[
+    "add_file", "delete_file", "update_file", "replace_file", "batch",
+];
+
 #[derive(Debug, Clone, Default)]
 /// Tracks Codex custom tool mappings and namespace tools during SSE conversion.
 pub struct CodexToolContext {
@@ -36,6 +41,7 @@ impl CodexToolContext {
             if let Some(name) = tool.as_str().filter(|n| !n.is_empty()) {
                 ctx.custom_tools.insert(name.to_string(), CustomToolSpec { openai_name: name.to_string(), built_in: false });
                 ctx.has_custom_tools = true;
+                ctx.register_apply_patch_subtools(name);
                 continue;
             }
             let tool_type = tool.get("type").and_then(Value::as_str).unwrap_or("");
@@ -50,12 +56,28 @@ impl CodexToolContext {
                         let built_in = matches!(tool_type, "web_search" | "local_shell" | "computer_use");
                         ctx.custom_tools.insert(name.to_string(), CustomToolSpec { openai_name: name.to_string(), built_in });
                         ctx.has_custom_tools = true;
+                        ctx.register_apply_patch_subtools(name);
                     }
                 }
                 _ => {}
             }
         }
         ctx
+    }
+
+    /// Register Chat Completions sub-tool names for `apply_patch` so the SSE
+    /// converter recognises them as custom tool proxies.
+    fn register_apply_patch_subtools(&mut self, name: &str) {
+        if name != "apply_patch" {
+            return;
+        }
+        for suffix in APPLY_PATCH_SUB_TOOLS {
+            let proxy_name = format!("apply_patch_{suffix}");
+            self.custom_tools.entry(proxy_name).or_insert_with(|| {
+                self.has_custom_tools = true;
+                CustomToolSpec { openai_name: "apply_patch".to_string(), built_in: false }
+            });
+        }
     }
 
     /// Check if a tool name corresponds to a registered custom tool.
