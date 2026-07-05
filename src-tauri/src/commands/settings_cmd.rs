@@ -11,7 +11,14 @@ pub async fn get_settings() -> settings::AppSettings {
 
 #[tauri::command]
 /// Save full system settings.
+/// When OCR is turned off, drops the engine to free memory.
 pub async fn save_settings(s: settings::AppSettings) -> Result<(), String> {
+    // Check if OCR is being disabled — free the engine
+    let prev = settings::AppSettings::load();
+    if prev.ocr_enabled && !s.ocr_enabled {
+        crate::ocr::shutdown();
+    }
+
     s.save().map_err(|e| e.to_string())
 }
 

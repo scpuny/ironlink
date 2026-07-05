@@ -12,6 +12,7 @@
 
 pub mod auth;
 pub mod error;
+pub mod ocr_interceptor;
 pub mod routing;
 
 use std::sync::Arc;
@@ -51,12 +52,12 @@ pub async fn handle_models(
     let codex_app = apps.iter().find(|a| a.id == "codex-desktop");
     let catalog_result = if let Some(app) = codex_app {
         if app.model_replacement_enabled && !app.model_mappings.is_empty() {
-            crate::config::write_mapped_model_catalog(&catalog_path, app, &profiles)
+            crate::config::write_mapped_model_catalog(&catalog_path, app, &profiles, &state.models.lock().await)
         } else {
-            crate::config::write_ironlink_model_catalog(&catalog_path, &profiles)
+            crate::config::write_ironlink_model_catalog(&catalog_path, &profiles, &state.models.lock().await)
         }
     } else {
-        crate::config::write_ironlink_model_catalog(&catalog_path, &profiles)
+        crate::config::write_ironlink_model_catalog(&catalog_path, &profiles, &state.models.lock().await)
     };
     if let Err(e) = catalog_result {
         tracing::warn!("Failed to write model catalog: {e}");
@@ -159,7 +160,7 @@ pub async fn handle_proxy(
     };
 
     // Rewrite model field using the mapped upstream model
-    let body_val = if let Some(obj) = body_val.as_object() {
+    let mut body_val = if let Some(obj) = body_val.as_object() {
         if let Some(model_val) = obj.get("model").and_then(|v| v.as_str()) {
             let upstream_bare = mapped_upstream_model.rsplit('/').next().unwrap_or(&mapped_upstream_model).to_string();
             tracing::info!("Model rewrite: {} -> {}", model_val, upstream_bare);
@@ -168,6 +169,61 @@ pub async fn handle_proxy(
             serde_json::Value::Object(new_obj)
         } else { body_val }
     } else { body_val };
+    // ── OCR Intercept: if request has images and model can't handle them, run OCR ──
+    {
+        let incoming_model = body_val.get("model").and_then(|v| v.as_str()).unwrap_or("");
+        let request_protocol = if path.contains("chat/completions") { "chatCompletions" }
+            else if path.contains("anthropic") || path.contains("messages") { "anthropic" }
+            else { "responses" };
+
+        // Read global OCR setting
+        let (ocr_enabled, ocr_models_ready) = {
+            let s = state.settings.lock().await;
+            (s.ocr_enabled, s.ocr_models_downloaded)
+        };
+
+        // Check per-mapping ocr_fallback
+        let mapping_fallback = {
+            let apps = state.apps.lock().await;
+            apps.iter()
+                .find(|a| a.enabled && a.protocol == request_protocol)
+                .and_then(|app| app.model_mappings.get(incoming_model))
+                .map(|m| m.ocr_fallback)
+                .unwrap_or(false)
+        };
+
+        let should_ocr = ocr_enabled || mapping_fallback;
+
+        if should_ocr {
+            // Look up the selected provider's model capabilities
+            let model_capabilities = {
+                let profiles = state.relay_profiles.lock().await;
+                profiles.iter()
+                    .find(|p| p.enabled)
+                    .map(|p| p.model_capabilities.clone())
+                    .unwrap_or_default()
+            };
+
+            let upstream_model = mapped_upstream_model
+                .rsplit('/')
+                .next()
+                .unwrap_or(&mapped_upstream_model);
+
+            let decision = crate::proxy::ocr_interceptor::ocr_intercept(
+                &body_val,
+                upstream_model,
+                &model_capabilities,
+                ocr_models_ready,
+            );
+
+            match decision {
+                crate::proxy::ocr_interceptor::OcrDecision::OcrApplied(modified) => {
+                    body_val = modified;
+                }
+                _ => {} // passthrough or skipped — keep body_val as-is
+            }
+        }
+    }
 
     let url = routing::profile_url(&base_url, &path, &protocol);
 
@@ -225,7 +281,7 @@ pub async fn handle_proxy(
     }
 
     if is_stream {
-        let sse_stream = convert_stream(resp, &protocol);
+        let sse_stream = convert_stream(resp, &protocol, Some(&body_val));
 
         Response::builder()
             .status(StatusCode::OK)
@@ -315,12 +371,12 @@ fn convert_response(bytes: &[u8], protocol: &str) -> Vec<u8> {
 }
 
 /// Wrap an upstream SSE byte stream into a Responses API SSE event stream.
-fn convert_stream(resp: reqwest::Response, protocol: &str) -> std::pin::Pin<Box<dyn futures::Stream<Item = io::Result<Bytes>> + Send>> {
+fn convert_stream(resp: reqwest::Response, protocol: &str, original_request: Option<&serde_json::Value>) -> std::pin::Pin<Box<dyn futures::Stream<Item = io::Result<Bytes>> + Send>> {
     let raw = resp.bytes_stream().map_err(|e| io::Error::new(io::ErrorKind::Other, e));
     match protocol {
         "responses" | "openai-responses" | "openai_responses" => Box::pin(raw),
-        "chat_completions" | "openai-chat" | "chatCompletions" => Box::pin(SseTransformStream::new(raw, true)),
-        "anthropic" => Box::pin(SseTransformStream::new(raw, false)),
+        "chat_completions" | "openai-chat" | "chatCompletions" => Box::pin(SseTransformStream::new(raw, true, original_request)),
+        "anthropic" => Box::pin(SseTransformStream::new(raw, false, None)),
         _ => Box::pin(raw),
     }
 }

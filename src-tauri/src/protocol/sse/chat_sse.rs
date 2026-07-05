@@ -68,6 +68,16 @@ impl Default for ChatSseConverter {
     }
 }
 
+impl ChatSseConverter {
+    /// Create a converter initialized with the original request's tool context.
+    pub fn with_request(orig: &serde_json::Value) -> Self {
+        Self {
+            state: ChatSseState::with_request(orig),
+            ..Self::default()
+        }
+    }
+}
+
 impl SseTransform for ChatSseConverter {
     fn push_bytes(&mut self, bytes: &[u8]) -> Vec<u8> {
         append_utf8_safe(&mut self.buffer, &mut self.utf8_remainder, bytes);
@@ -96,6 +106,20 @@ impl SseTransform for ChatSseConverter {
         self.failed = true;
         output.into_bytes()
     }
+}
+
+/// Check if the tool name corresponds to a custom tool (e.g. web_search).
+
+/// Build output item for a custom tool call (different format from function_call).
+fn custom_tool_output_item(state: &ToolCallState) -> Value {
+    serde_json::json!({
+        "id": format!("ctc_{}", state.call_id),
+        "type": "custom_tool_call",
+        "status": "completed",
+        "call_id": state.call_id,
+        "name": state.name,
+        "input": state.arguments,
+    })
 }
 
 /// Format and append an SSE event string to the output buffer.
@@ -348,18 +372,26 @@ impl ChatSseState {
             state.output_index = Some(assigned);
             state.item_id = format!("fc_{}", state.call_id);
             state.added = true;
+
+            let is_custom = self.tool_context.is_custom_tool_proxy(&state.name);
+            let item_type = if is_custom { "custom_tool_call" } else { "function_call" };
+
             push_sse(out, SSE_OUTPUT_ITEM_ADDED, serde_json::json!({
                 "type": SSE_OUTPUT_ITEM_ADDED, "output_index": assigned,
-                "item": {"id": &state.item_id, "type": "function_call", "status": "in_progress",
-                         "call_id": &state.call_id, "name": &state.name, "arguments": ""}
+                "item": {"id": &state.item_id, "type": item_type, "status": "in_progress",
+                         "call_id": &state.call_id, "name": &state.name,
+                         "arguments": "", "input": ""}
             }));
         }
         if !args_delta.is_empty() {
-            if let Some(oi) = state.output_index {
-                push_sse(out, SSE_FUNC_ARGS_DELTA, serde_json::json!({
-                    "type": SSE_FUNC_ARGS_DELTA, "item_id": &state.item_id,
-                    "output_index": oi, "delta": args_delta
-                }));
+            let is_custom = self.tool_context.is_custom_tool_proxy(&state.name);
+            if !is_custom {
+                if let Some(oi) = state.output_index {
+                    push_sse(out, SSE_FUNC_ARGS_DELTA, serde_json::json!({
+                        "type": SSE_FUNC_ARGS_DELTA, "item_id": &state.item_id,
+                        "output_index": oi, "delta": args_delta
+                    }));
+                }
             }
         }
     }
@@ -443,13 +475,24 @@ impl ChatSseState {
                 _ => continue,
             };
             let oi = state.output_index.unwrap_or(0);
-            let item = serde_json::json!({
-                "id": &state.item_id, "type": "function_call", "status": "completed",
-                "call_id": &state.call_id, "name": &state.name, "arguments": &state.arguments
-            });
+
+            let is_custom = self.tool_context.is_custom_tool_proxy(&state.name);
+            let item = if is_custom {
+                custom_tool_output_item(state)
+            } else {
+                serde_json::json!({
+                    "id": &state.item_id, "type": "function_call", "status": "completed",
+                    "call_id": &state.call_id, "name": &state.name, "arguments": &state.arguments
+                })
+            };
+
             state.done = true;
             self.output_items.push((oi, item.clone()));
-            push_sse(out, SSE_FUNC_ARGS_DONE, serde_json::json!({"type": SSE_FUNC_ARGS_DONE, "item_id": &state.item_id, "output_index": oi, "arguments": &state.arguments}));
+
+            if !is_custom {
+                push_sse(out, SSE_FUNC_ARGS_DONE, serde_json::json!({"type": SSE_FUNC_ARGS_DONE, "item_id": &state.item_id, "output_index": oi, "arguments": &state.arguments}));
+            }
+
             push_sse(out, SSE_OUTPUT_ITEM_DONE, serde_json::json!({"type": SSE_OUTPUT_ITEM_DONE, "output_index": oi, "item": item}));
         }
     }

@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Card, Button, Typography, Space, Radio, Row, Col, Switch, message, InputNumber } from 'antd';
 import {
-  MoonOutlined, SunOutlined, GlobalOutlined,
-  ThunderboltOutlined, DesktopOutlined, ExportOutlined, ImportOutlined,
-  CloseOutlined, CheckOutlined,
+  MoonOutlined, SunOutlined, DesktopOutlined, GlobalOutlined,
+  ThunderboltOutlined, ExportOutlined, ImportOutlined,
+  CloseOutlined, CheckOutlined, EyeOutlined,
 } from '@ant-design/icons';
 import { useI18n } from '../../i18n';
 import { useAppearance } from '../../appearance/store';
 import {
   getAutoStart, setAutoStart, toggleProxy,
-  fetchSettings, saveSettings, fetchStatus,
+  fetchSettings, saveSettings,
   exportConfig, importConfig,
 } from '../../api';
 import { THEME_STYLES_META } from '../../appearance/themeTokens';
@@ -32,15 +32,15 @@ export default function Settings() {
   const { t, lang, setLang } = useI18n();
   const { themeStyle, setThemeStyle, textSize, setTextSize, fontFamily, setFontFamily, themeMode, setThemeMode } = useAppearance();
   const [autoStart, setAutoStartState] = useState(false);
-  const [proxyEnabled, setProxyEnabled] = useState(false);
   const [togglingAuto, setTogglingAuto] = useState(false);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [saving, setSaving] = useState(false);
 
+
   useEffect(() => {
     getAutoStart().then(setAutoStartState).catch(() => {});
     fetchSettings().then(s => setSettings(s)).catch(() => {});
-    fetchStatus().then(s => setProxyEnabled(s.enabled)).catch(() => {});
+
   }, []);
 
   const handleAutoStartToggle = async (checked: boolean) => {
@@ -267,15 +267,14 @@ export default function Settings() {
                 <GlobalOutlined style={{ fontSize: 18 }} />
                 <div>
                   <Text style={{ fontSize: 14, fontWeight: 500 }}>{t('proxy_port')}</Text>
-                  <div><Text type="secondary" style={{ fontSize: 12 }}>{t('proxy_port_desc')}</Text>
-                  {proxyEnabled && <Text type="danger" style={{ fontSize: 11, display: 'block' }}>{t('proxy_port_stop_hint')}</Text>}</div>
+                  <div><Text type="secondary" style={{ fontSize: 12 }}>{t('proxy_port_desc')}</Text></div>
                 </div>
               </Space>
               <InputNumber
                 min={1024} max={65535}
                 value={settings.proxy_port}
                 placeholder="15723"
-                disabled={proxyEnabled}
+                disabled={false}
                 onChange={v => {
                   if (v && v !== settings.proxy_port) {
                     handleSaveSettings({ proxy_port: v });
@@ -283,24 +282,6 @@ export default function Settings() {
                 }}
                 size="small"
                 style={{ width: 100 }}
-              />
-            </div>
-          )}
-
-          {/* Start minimized */}
-          {settings && (
-            <div className="config-row">
-              <Space>
-                <DesktopOutlined style={{ fontSize: 18 }} />
-                <div>
-                  <Text style={{ fontSize: 14, fontWeight: 500 }}>{t('start_minimized')}</Text>
-                  <div><Text type="secondary" style={{ fontSize: 12 }}>{t('start_minimized_desc')}</Text></div>
-                </div>
-              </Space>
-              <Switch
-                checked={settings.start_minimized}
-                onChange={c => handleSaveSettings({ start_minimized: c })}
-                loading={saving} size="small"
               />
             </div>
           )}
@@ -323,24 +304,6 @@ export default function Settings() {
             </div>
           )}
 
-          {/* Config injection toggle */}
-          {settings && (
-            <div className="config-row">
-              <Space>
-                <GlobalOutlined style={{ fontSize: 18 }} />
-                <div>
-                  <Text style={{ fontSize: 14, fontWeight: 500 }}>{t('config_injection_toggle')}</Text>
-                  <div><Text type="secondary" style={{ fontSize: 12 }}>{t('config_injection_toggle_desc')}</Text></div>
-                </div>
-              </Space>
-              <Switch
-                checked={settings.config_injection_enabled}
-                onChange={c => handleSaveSettings({ config_injection_enabled: c })}
-                loading={saving} size="small"
-              />
-            </div>
-          )}
-
           {/* Language */}
           <div className="config-row">
             <Space>
@@ -355,6 +318,33 @@ export default function Settings() {
             </Button>
           </div>
         </Space>
+      </Card>
+
+      {/* ── Image Recognition (OCR) ── */}
+      <Card className="hover-card" style={{ borderRadius: 12 }}>
+        <Title level={5} style={{ marginTop: 0, marginBottom: 20 }}>
+          <EyeOutlined style={{ marginRight: 8 }} />{t('image_recognition')}
+        </Title>
+
+        {/* OCR enabled toggle */}
+        {settings && (
+          <div className="config-row">
+            <Space>
+              <EyeOutlined style={{ fontSize: 18 }} />
+              <div>
+                <Text style={{ fontSize: 14, fontWeight: 500 }}>{t('ocr_enabled')}</Text>
+                <div><Text type="secondary" style={{ fontSize: 12 }}>{t('ocr_enabled_desc')}</Text></div>
+              </div>
+            </Space>
+            <Switch
+              checked={settings.ocr_enabled}
+              onChange={c => handleSaveSettings({ ocr_enabled: c })}
+              loading={saving} size="small"
+            />
+          </div>
+        )}
+
+
       </Card>
 
       {/* ── Data Management ── */}

@@ -51,6 +51,21 @@ const messages: Record<Lang, Record<string, string>> = {
     'dark_mode': '深色模式',
     'follow_system': '跟随系统',
 
+
+
+    // OCR / Image Recognition
+    'image_recognition': '图像识别',
+    'ocr_enabled': '启用图像识别 (OCR)',
+    'ocr_enabled_desc': '当模型不支持视觉输入时，自动 OCR 识别图片中的文字',
+    'ocr_model_status': 'OCR 模型状态',
+    'ocr_models_ready': '模型已就绪',
+    'ocr_models_missing': '模型未下载',
+    'ocr_download_models': '下载模型',
+    'ocr_download_start': '正在下载 OCR 模型 (~20MB)...',
+    'ocr_download_success': 'OCR 模型下载完成',
+    'ocr_download_failed': 'OCR 模型下载失败',
+    'ocr_fallback': 'OCR 回退',
+    'ocr_mapping_tooltip': '此模型不支持视觉输入，启用 OCR 回退自动识别图片文字',
     // Navigation
     'overview': '概览',
     'codex_platform': 'Codex 平台',
@@ -129,6 +144,14 @@ const messages: Record<Lang, Record<string, string>> = {
     'created': '创建时间',
     'done': '完成',
     'active': '活跃',
+    'context_window': '上下文窗口',
+    'max_context_window': '最大上下文窗口',
+    'input_modalities': '输入模态',
+    'modality_text': '文本',
+    'modality_image': '图片',
+    'modality_vision': '视觉',
+    'context_window_tip': '模型上下文窗口大小 (0 = 使用默认)',
+    'input_modalities_tip': '模型支持的输入类型',
     'required': '必填',
 
     // StatusPanel
@@ -229,7 +252,13 @@ const messages: Record<Lang, Record<string, string>> = {
     'about_update_title': '更新',
     'about_update_desc': '检查新版本，获取最新功能和修复',
     'about_check_update': '检查更新',
-    'about_download': '下载',
+    'about_download': '下载',    'about_update_available': '新版本可用: v{v}',
+    'about_up_to_date': '已是最新版',
+    'about_check_failed': '版本检查失败',    'close_dialog_title': '退出 IronLink？',
+    'close_dialog_message': '关闭窗口后，IronLink 代理将继续在后台运行。',
+    'close_hide_tray': '隐藏到托盘',
+    'close_quit': '退出',
+    'about_new_version': '新版本',
     'about_license': 'MIT 协议',
     'lang_label': '{lang}',
     'runtime': '运行时',
@@ -295,59 +324,20 @@ const messages: Record<Lang, Record<string, string>> = {
   },
 
   en: {
-    // System
-    'auto_start': 'Auto-start proxy',
-    'auto_start_desc': 'Auto-enable proxy when IronLink launches',
-    'language': 'Language',
-    'proxy_port': 'Proxy Port',
-    'proxy_port_desc': 'IronLink proxy server listen port',
-    'proxy_port_stop_hint': 'Stop the proxy first to change the port',
-    'start_minimized': 'Start minimized',
-    'start_minimized_desc': 'Start IronLink minimized to tray',
-    'minimize_to_tray': 'Minimize to tray on close',
-    'minimize_to_tray_desc': 'Minimize to tray instead of quitting',
-    'config_injection_toggle': 'Config injection',
-    'config_injection_toggle_desc': 'Auto-rewrite downstream app configs to point to IronLink',
-    'data_management': 'Data Management',
-    'export_config': 'Export config',
-    'export_config_desc': 'Export all provider and app configs as JSON',
-    'import_config': 'Import config',
-    'import_config_desc': 'Import config from JSON file',
-    'import_success': 'Import successful: {sections}',
-    'export_success': 'Config exported',
-    'config_dir': 'App config directory',
-    'config_dir_placeholder': 'Leave empty for default (~/.codex etc)',
-    'config_dir_desc': 'Override the app config directory (codex_toml only)',
-    'browse': 'Browse',
-    'backup_enabled': 'Backup before write',
-    'backup_enabled_desc': 'Auto-backup config before modifying, restore on disable',
-    'inject_fields': 'Inject fields',
-    'inject_fields_desc': 'Select fields to inject, empty = inject all',
-    'inject_field_model': 'Default model',
-    'inject_field_reasoning': 'Reasoning effort',
-    'inject_field_catalog': 'Model catalog',
-    'inject_field_providers': 'Provider config',
-    'inject_field_marketplaces': 'Marketplace config',
-    'config_snippet': 'Config snippet',
-    'config_snippet_placeholder': '# Example: model=gpt-4o, reasoning_effort=high, [model_providers.custom] base_url=https://...',
-    'model_replacement_enabled': 'Enable Model Replacement',
-    'model_replacement_desc': 'When enabled, only model display names are replaced; custom model mappings are not used',
-    'model_replacement_label': 'Model Replacement',
-    'model_display_names_desc': 'Set a display name for each model. Leave empty to exclude from the catalog',
-    'model_display_name_placeholder': 'Enter display name…',
-    'will_display': 'Will display',
-    'model_replacement_disabled_hint': 'Not enabled',
 
-    // Applications
-    'view_config': 'View Config',
-    'current_config': 'Current Config',
-    'config_file_empty': 'Config file is empty',
-    'error_reading_config': 'Failed to read config file',
-    'preview_config': 'Preview Config',
-    // Appearance
-
-    // System
-
+    // OCR / Image Recognition
+    'image_recognition': 'Image Recognition',
+    'ocr_enabled': 'Enable Image Recognition (OCR)',
+    'ocr_enabled_desc': 'When model does not support vision input, automatically OCR text from images',
+    'ocr_model_status': 'OCR Model Status',
+    'ocr_models_ready': 'Models ready',
+    'ocr_models_missing': 'Models not downloaded',
+    'ocr_download_models': 'Download Models',
+    'ocr_download_start': 'Downloading OCR models (~20MB)...',
+    'ocr_download_success': 'OCR models downloaded',
+    'ocr_download_failed': 'Failed to download OCR models',
+    'ocr_fallback': 'OCR Fallback',
+    'ocr_mapping_tooltip': 'This model does not support vision. Enable OCR fallback to auto-recognize text from images',
     // Navigation
 
     // Common
@@ -367,6 +357,14 @@ const messages: Record<Lang, Record<string, string>> = {
     'no_mappings_hint': 'No mappings',
     'select_upstream_model': 'Select upstream model',
     'add_mapping': 'Add Mapping',
+    'context_window': 'Context Window',
+    'max_context_window': 'Max Context Window',
+    'input_modalities': 'Input Modalities',
+    'modality_text': 'Text',
+    'modality_image': 'Image',
+    'modality_vision': 'Vision',
+    'context_window_tip': 'Model context window size (0 = use default)',
+    'input_modalities_tip': 'Supported input types for this model',
 
     // About
 

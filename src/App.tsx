@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ConfigProvider, theme, Layout, Menu, Typography, Button, Space, Modal } from 'antd';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import {
   DashboardOutlined, ToolOutlined, SunOutlined, MoonOutlined, TranslationOutlined,
   GithubOutlined, ApiOutlined, BarsOutlined, InfoCircleOutlined,
@@ -53,6 +55,18 @@ function antdTokens(t: ThemeTokens, fontCss: string, baseSize: number) {
 function AppInner() {
   const [page, setPage] = useState('Status');
   const [logModalOpen, setLogModalOpen] = useState(false);
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+
+  // Listen for close-requested event from the backend
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      unlisten = await listen('close-requested', () => {
+        setCloseDialogOpen(true);
+      });
+    })();
+    return () => { unlisten?.(); };
+  }, []);
   const { data: status, refetch: refetchStatus } = useStatus();
 
   // Poll status every 2s to sync header with StatusPanel
@@ -219,7 +233,24 @@ function AppInner() {
             />
           </Header>
           <Modal
-            title={t('proxy_logs')}
+            title={t('close_dialog_title')}
+            open={closeDialogOpen}
+            onCancel={() => setCloseDialogOpen(false)}
+            footer={[
+              <Button key="hide" onClick={async () => {
+                setCloseDialogOpen(false);
+                await invoke('hide_window');
+              }}>{t('close_hide_tray')}</Button>,
+              <Button key="quit" type="primary" danger onClick={async () => {
+                setCloseDialogOpen(false);
+                await invoke('quit_app');
+              }}>{t('close_quit')}</Button>,
+            ]}
+            width={400}
+          >
+            <Typography.Text>{t('close_dialog_message')}</Typography.Text>
+          </Modal>
+          <Modal
             open={logModalOpen}
             onCancel={() => setLogModalOpen(false)}
             footer={null}

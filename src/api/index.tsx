@@ -97,6 +97,9 @@ export type RelayProfileData = {
   model_list: string[];
   enabled: boolean;
   active: boolean;
+  model_capabilities?: Record<string, string[]>;
+  model_context_windows?: Record<string, number>;
+  model_max_context_windows?: Record<string, number>;
 };
 
 export function fetchProfiles(): Promise<RelayProfileData[]> {
@@ -129,7 +132,7 @@ export type AppData = {
   default_model: string;
   models: string[];
   config_injection: AppInjection | null;
-  model_mappings: Record<string, { provider_id: string; upstream_model: string }>;
+  model_mappings: Record<string, { provider_id: string; upstream_model: string; ocr_fallback?: boolean }>;
   model_replacement_enabled: boolean;
   model_display_names: Record<string, string>;
   config_snippet?: string;
@@ -208,4 +211,35 @@ export function exportConfig(): Promise<string> {
 
 export function importConfig(json: string): Promise<string> {
   return tauriInvoke<string>('import_config', { json });
+}
+
+// ── OCR / Image Recognition ──
+
+export interface OcrStatusData {
+  enabled: boolean;
+  models_ready: boolean;
+  engine_loaded: boolean;
+  models_path: string;
+}
+
+export function checkOcrStatus(): Promise<OcrStatusData> {
+  return tauriInvoke<OcrStatusData>('check_ocr_status');
+}
+
+
+export function runOcr(imagePath: string): Promise<import("../types").OcrTextResult[]> {
+  return tauriInvoke<import("../types").OcrTextResult[]>('run_ocr', { image_path: imagePath });
+}
+
+// ── Version Check ──
+
+export interface VersionInfo {
+  current_version: string;
+  latest_version: string;
+  has_update: boolean;
+  release_url: string;
+}
+
+export function checkVersion(): Promise<VersionInfo> {
+  return tauriInvoke<VersionInfo>('check_version');
 }

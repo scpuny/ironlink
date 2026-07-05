@@ -72,7 +72,7 @@ impl AppState {
                 id: "default".into(), provider_id: "deepseek".into(), name: "DeepSeek".into(),
                 base_url: "https://api.deepseek.com/v1".into(), api_key: String::new(),
                 protocol: "chatCompletions".into(), model: "deepseek-chat".into(),
-                test_model: String::new(), model_list: Vec::new(), enabled: true, active: true,
+                test_model: String::new(), model_list: Vec::new(), enabled: true, active: true, model_capabilities: std::collections::HashMap::new(), model_context_windows: std::collections::HashMap::new(), model_max_context_windows: std::collections::HashMap::new(),
             }]
         } else { profiles_data };
         let active_id = profiles.iter().find(|p| p.active).map(|p| p.id.clone()).unwrap_or_else(|| profiles[0].id.clone());
@@ -92,7 +92,7 @@ impl AppState {
             }),
             models: Mutex::new(vec![ModelEntry {
                 id: "deepseek/deepseek-v4-flash".into(), object: "model".into(),
-                created: chrono::Utc::now().timestamp(), owned_by: "ironlink".into(),
+                created: chrono::Utc::now().timestamp(), owned_by: "ironlink".into(), context_window: None, max_context_window: None, input_modalities: None,
             }]),
             relay_profiles: Mutex::new(profiles), active_relay_id: Mutex::new(active_id),
             apps: Mutex::new(app_list),
@@ -109,7 +109,8 @@ impl AppState {
 /// Enabled:  backup per-app config, rewrite with proxy settings.
 /// Disabled: restore per-app config from backup.
 pub fn toggle_proxy(enabled: bool, default_model: &str, reasoning_effort: &str,
-                    profiles: &[crate::models::RelayProfile], apps: &[crate::models::AppConfig]) -> bool {
+                    profiles: &[crate::models::RelayProfile], apps: &[crate::models::AppConfig],
+                    models: &[crate::models::ModelEntry]) -> bool {
     if enabled {
         let mut any_ok = false;
         for app in apps.iter().filter(|a| a.enabled) {
@@ -132,7 +133,7 @@ pub fn toggle_proxy(enabled: bool, default_model: &str, reasoning_effort: &str,
                 }
             }
 
-            if let Err(e) = write_app_proxy_config(&original, &app.default_model, reasoning_effort, profiles, inj, &app.config_snippet, app) {
+            if let Err(e) = write_app_proxy_config(&original, &app.default_model, reasoning_effort, profiles, inj, &app.config_snippet, app, models) {
                 warn!("Failed to inject config for '{}': {e}", app.name);
             } else {
                 any_ok = true;
@@ -148,7 +149,7 @@ pub fn toggle_proxy(enabled: bool, default_model: &str, reasoning_effort: &str,
                 let bak_path = app_codex_bak_path();
                 if let Some(parent) = bak_path.parent() { let _ = std::fs::create_dir_all(parent); }
                 let _ = std::fs::write(&bak_path, &original);
-                let _ = write_proxy_config(&original, default_model, reasoning_effort, profiles);
+                let _ = write_proxy_config(&original, default_model, reasoning_effort, profiles, models);
             }
         }
         any_ok
@@ -270,7 +271,7 @@ pub fn read_codex_config() -> String {
     std::fs::read_to_string(&codex_config_path(None)).unwrap_or_default()
 }
 
-fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &str, profiles: &[crate::models::RelayProfile]) -> anyhow::Result<()> {
+fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &str, profiles: &[crate::models::RelayProfile], models: &[crate::models::ModelEntry]) -> anyhow::Result<()> {
     let proxy_url = format!("http://127.0.0.1:{}/v1", proxy_port());
     let mut doc: toml_edit::DocumentMut = original.parse().map_err(|e| anyhow::anyhow!("TOML parse error: {e}"))?;
 
@@ -280,7 +281,7 @@ fn write_proxy_config(original: &str, default_model: &str, reasoning_effort: &st
 
     // Write model catalog to Codex config dir so relative path resolves correctly
     let catalog_path = model_catalog_path();
-    write_ironlink_model_catalog(&catalog_path, profiles)?;
+    write_ironlink_model_catalog(&catalog_path, profiles, models)?;
     doc["model_catalog_json"] = toml_edit::value(crate::config::model_catalog_path().to_string_lossy().as_ref());
 
     // Set active model_provider and [model_providers.ironlink] table
@@ -354,7 +355,7 @@ pub fn atomic_write(path: &std::path::Path, content: &str) -> anyhow::Result<()>
 fn write_app_proxy_config(original: &str, default_model: &str, reasoning_effort: &str,
                           profiles: &[crate::models::RelayProfile],
                           inj: &crate::models::AppInjection, snippet: &Option<String>,
-                          app: &crate::models::AppConfig) -> anyhow::Result<()> {
+                          app: &crate::models::AppConfig, models: &[crate::models::ModelEntry]) -> anyhow::Result<()> {
     let proxy_url = format!("http://127.0.0.1:{}/v1", proxy_port());
     let config_path = std::path::Path::new(&inj.config_path);
     let fields = inj.fields.as_ref();
@@ -373,10 +374,10 @@ fn write_app_proxy_config(original: &str, default_model: &str, reasoning_effort:
                 let catalog_path = model_catalog_path();
                 if app.model_replacement_enabled {
                     // Model mapping enabled: catalog only contains mapped models
-                    write_mapped_model_catalog(&catalog_path, app, profiles)?;
+                    write_mapped_model_catalog(&catalog_path, app, profiles, models)?;
                 } else {
                     // Model mapping disabled: catalog contains all provider models
-                    write_ironlink_model_catalog(&catalog_path, profiles)?;
+                    write_ironlink_model_catalog(&catalog_path, profiles, models)?;
                 }
                 doc["model_catalog_json"] = toml_edit::value(crate::config::model_catalog_path().to_string_lossy().as_ref());
             }
@@ -426,7 +427,7 @@ fn write_app_proxy_config(original: &str, default_model: &str, reasoning_effort:
         }
         _ => {
             // Fallback for unknown config types
-            write_proxy_config(original, default_model, reasoning_effort, profiles)?;
+            write_proxy_config(original, default_model, reasoning_effort, profiles, models)?;
         }
     }
     Ok(())
@@ -542,7 +543,7 @@ fn preview_model_catalog(profiles: &[crate::models::RelayProfile], app: &crate::
 /// Only models that have a mapping entry appear in the catalog.
 /// Slug = the original Codex model name (key), display_name = providerId/upstream_model.
 ///
-pub fn write_mapped_model_catalog(path: &std::path::Path, app: &crate::models::AppConfig, profiles: &[crate::models::RelayProfile]) -> anyhow::Result<()> {
+pub fn write_mapped_model_catalog(path: &std::path::Path, app: &crate::models::AppConfig, profiles: &[crate::models::RelayProfile], models: &[crate::models::ModelEntry]) -> anyhow::Result<()> {
     let template_text = include_str!("../resources/gpt5_5_template.json");
     let template: serde_json::Value = serde_json::from_str(template_text)
         .map_err(|e| anyhow::anyhow!("Failed to parse template: {e}"))?;
@@ -569,6 +570,24 @@ pub fn write_mapped_model_catalog(path: &std::path::Path, app: &crate::models::A
             obj.insert("availability_nux".to_string(), serde_json::Value::Null);
             obj.insert("upgrade".to_string(), serde_json::Value::Null);
         }
+        // Apply per-model overrides from ModelEntry
+        if let Some(me) = models.iter().find(|m| m.id == *codex_model) {
+            if let Some(cw) = me.context_window {
+                if let Some(obj) = entry.as_object_mut() {
+                    obj.insert("context_window".to_string(), serde_json::json!(cw));
+                }
+            }
+            if let Some(mcw) = me.max_context_window {
+                if let Some(obj) = entry.as_object_mut() {
+                    obj.insert("max_context_window".to_string(), serde_json::json!(mcw));
+                }
+            }
+            if let Some(mods) = &me.input_modalities {
+                if let Some(obj) = entry.as_object_mut() {
+                    obj.insert("input_modalities".to_string(), serde_json::json!(mods));
+                }
+            }
+        }
         entries.push(entry);
     }
 
@@ -581,7 +600,7 @@ pub fn write_mapped_model_catalog(path: &std::path::Path, app: &crate::models::A
 
 /// Generate the `ironlink-model-catalog.json` file that tells Codex which models are available.
 /// Follows cc-switch's approach: clone the bundled gpt-5.5 template for each provider model.
-pub fn write_ironlink_model_catalog(path: &std::path::Path, profiles: &[crate::models::RelayProfile]) -> anyhow::Result<()> {
+pub fn write_ironlink_model_catalog(path: &std::path::Path, profiles: &[crate::models::RelayProfile], models: &[crate::models::ModelEntry]) -> anyhow::Result<()> {
     let template_text = include_str!("../resources/gpt5_5_template.json");
     let template: serde_json::Value = serde_json::from_str(template_text)
         .map_err(|e| anyhow::anyhow!("Failed to parse template: {e}"))?;
@@ -612,6 +631,34 @@ pub fn write_ironlink_model_catalog(path: &std::path::Path, profiles: &[crate::m
                 obj.insert("service_tiers".to_string(), serde_json::json!([]));
                 obj.insert("availability_nux".to_string(), serde_json::Value::Null);
                 obj.insert("upgrade".to_string(), serde_json::Value::Null);
+            }
+            // Apply per-model overrides: profile-level config takes priority
+            // 1. context_window — check profile.model_context_windows first, then ModelEntry
+            if let Some(cw) = p.model_context_windows.get(*model_id).or_else(|| {
+                models.iter().find(|m| m.id == *model_id || m.id == slug)
+                    .and_then(|m| m.context_window.as_ref())
+            }) {
+                if let Some(obj) = entry.as_object_mut() {
+                    obj.insert("context_window".to_string(), serde_json::json!(cw));
+                }
+            }
+            // 2. max_context_window
+            if let Some(mcw) = p.model_max_context_windows.get(*model_id).or_else(|| {
+                models.iter().find(|m| m.id == *model_id || m.id == slug)
+                    .and_then(|m| m.max_context_window.as_ref())
+            }) {
+                if let Some(obj) = entry.as_object_mut() {
+                    obj.insert("max_context_window".to_string(), serde_json::json!(mcw));
+                }
+            }
+            // 3. input_modalities — check profile.model_capabilities first, then ModelEntry
+            if let Some(mods) = p.model_capabilities.get(*model_id).or_else(|| {
+                models.iter().find(|m| m.id == *model_id || m.id == slug)
+                    .and_then(|m| m.input_modalities.as_ref())
+            }) {
+                if let Some(obj) = entry.as_object_mut() {
+                    obj.insert("input_modalities".to_string(), serde_json::json!(mods));
+                }
             }
             entries.push(entry);
         }
@@ -696,7 +743,8 @@ pub fn write_raw(content: &str) -> anyhow::Result<()> {
 /// Append a log line to the shared log buffer (bounded to 500 entries).
 pub async fn push_log(state: &Arc<AppState>, line: String) {
     let mut buf = state.log_buffer.lock().await;
-    buf.push(line);
+    let ts = chrono::Local::now().format("%H:%M:%S%.3f").to_string();
+    buf.push(format!("[{}] {}", ts, line));
     let n = buf.len();
     if n > 500 {
         buf.drain(0..n - 500);

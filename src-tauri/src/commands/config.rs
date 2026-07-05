@@ -63,17 +63,18 @@ pub async fn regenerate_model_catalog(state: State<'_, Arc<AppState>>) -> Result
     let profiles = state.relay_profiles.lock().await.clone();
     let apps = state.apps.lock().await.clone();
     let path = crate::config::model_catalog_path();
+    let models = state.models.lock().await.clone();
 
     // If there's a codex desktop app with model replacement enabled, generate mapped catalog
     let codex_app = apps.iter().find(|a| a.id == "codex-desktop");
     if let Some(app) = codex_app {
         if app.model_replacement_enabled && !app.model_mappings.is_empty() {
-            crate::config::write_mapped_model_catalog(&path, app, &profiles).map_err(|e| e.to_string())
+            crate::config::write_mapped_model_catalog(&path, app, &profiles, &models).map_err(|e| e.to_string())
         } else {
-            crate::config::write_ironlink_model_catalog(&path, &profiles).map_err(|e| e.to_string())
+            crate::config::write_ironlink_model_catalog(&path, &profiles, &models).map_err(|e| e.to_string())
         }
     } else {
-        crate::config::write_ironlink_model_catalog(&path, &profiles).map_err(|e| e.to_string())
+        crate::config::write_ironlink_model_catalog(&path, &profiles, &models).map_err(|e| e.to_string())
     }
 }
 

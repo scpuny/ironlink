@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Button, Typography, Tag, message as antMsg, Switch, Select, Divider, Space, Modal, Tabs } from 'antd';
+import { Button, Typography, Tag, message as antMsg, Switch, Select, Divider, Space, Modal, Tabs, Checkbox, Tooltip } from 'antd';
 import { SettingOutlined, CodeOutlined, EditOutlined, CloseOutlined, ArrowLeftOutlined, CheckOutlined, ArrowRightOutlined, FolderOpenOutlined, FileTextOutlined } from '@ant-design/icons';
 import { EditorView, basicSetup } from 'codemirror';
 import { EditorState } from '@codemirror/state';
@@ -474,6 +474,31 @@ export default function Applications() {
                                   onClick={() => removeMapping(codexModel)}
                                   style={{ borderRadius: 4, fontSize: 10 }}
                                 />
+                                {(() => {
+                                  const provider = selectedProvider ? profiles.find(p => p.provider_id === mapping.provider_id) : null;
+                                  if (!provider) return null;
+                                  const caps = provider.model_capabilities?.[mapping.upstream_model] || [];
+                                  const hasVision = caps.includes('vision');
+                                  if (hasVision) return null;
+                                  const ocrChecked = (mapping as any).ocr_fallback || false;
+                                  return (
+                                    <Tooltip title={t('ocr_mapping_tooltip')}>
+                                      <Checkbox
+                                        checked={ocrChecked}
+                                        onChange={e => {
+                                          const mappings = { ...draft.model_mappings };
+                                          mappings[codexModel] = { ...mappings[codexModel], ocr_fallback: e.target.checked };
+                                          setDraft({ ...draft, model_mappings: mappings });
+                                        }}
+                                        style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+                                      >
+                                        <Text style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                                          {t('ocr_fallback')}
+                                        </Text>
+                                      </Checkbox>
+                                    </Tooltip>
+                                  );
+                                })()}
                               </>
                             ) : (
                               <Text style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{t('model_replacement_disabled_hint')}</Text>

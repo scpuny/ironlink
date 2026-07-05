@@ -35,6 +35,12 @@ pub struct AppSettings {
     #[serde(default = "default_language")]
     pub language: String,
 
+    // ── OCR / Image Recognition ──
+    #[serde(default)]
+    pub ocr_enabled: bool,
+    #[serde(default)]
+    pub ocr_models_downloaded: bool,
+
     // ponytail: future expansion slots — no schema migration needed later
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skill_settings_enabled: Option<bool>,
@@ -51,6 +57,8 @@ impl Default for AppSettings {
             start_minimized: false,
             config_injection_enabled: true,
             language: "zh".to_string(),
+            ocr_enabled: false,
+            ocr_models_downloaded: false,
             skill_settings_enabled: None,
             unified_session: None,
         }

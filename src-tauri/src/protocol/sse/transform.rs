@@ -7,6 +7,7 @@ use std::task::{Context, Poll};
 use crate::protocol::core::traits::SseTransform;
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
+use serde_json::Value;
 
 use crate::protocol::sse::anthropic_sse::AnthropicSseConverter;
 use crate::protocol::sse::chat_sse::ChatSseConverter;
@@ -28,11 +29,18 @@ enum Mode {
 
 impl<S> SseTransformStream<S> {
     /// Create a new SSE transform stream for the given upstream type.
-    pub fn new(inner: S, is_chat: bool) -> Self {
+    ///
+    /// `original_request` — the original Responses API request body (with `tools`),
+    /// used to correctly emit custom tool calls (web_search, etc.) vs function calls.
+    pub fn new(inner: S, is_chat: bool, original_request: Option<&Value>) -> Self {
         Self {
             inner,
             mode: if is_chat {
-                Mode::Chat(ChatSseConverter::default())
+                Mode::Chat(
+                    original_request
+                        .map(|v| ChatSseConverter::with_request(v))
+                        .unwrap_or_default()
+                )
             } else {
                 Mode::Anthropic(AnthropicSseConverter::default())
             },

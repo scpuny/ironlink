@@ -19,7 +19,7 @@ export default function ModelList() {
     if (data) setModels(data);
   }, [data]);
 
-  const handleChange = (id: string, field: keyof ModelEntry, value: string | number) => {
+  const handleChange = (id: string, field: keyof ModelEntry, value: string | number | string[]) => {
     setModels(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m));
   };
 
@@ -105,7 +105,7 @@ function ModelCard({
   model: ModelEntry;
   editing: boolean;
   onStartEdit: () => void;
-  onChange: (field: keyof ModelEntry, value: string | number) => void;
+  onChange: (field: keyof ModelEntry, value: string | number | string[]) => void;
   onDelete: () => void;
   onStopEdit: () => void;
 }) {
@@ -154,6 +154,53 @@ function ModelCard({
               style={{ borderRadius: 6, marginTop: 2, fontSize: 12 }}
               placeholder="custom"
             />
+          </div>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>{t('context_window')}</Typography.Text>
+            <Input
+              size="small"
+              type="number"
+              value={model.context_window ?? ''}
+              onChange={e => onChange('context_window', e.target.value ? Number(e.target.value) : undefined as any)}
+              style={{ borderRadius: 6, marginTop: 2, fontSize: 12 }}
+              placeholder="128000"
+            />
+          </div>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>{t('max_context_window')}</Typography.Text>
+            <Input
+              size="small"
+              type="number"
+              value={model.max_context_window ?? ''}
+              onChange={e => onChange('max_context_window', e.target.value ? Number(e.target.value) : undefined as any)}
+              style={{ borderRadius: 6, marginTop: 2, fontSize: 12 }}
+              placeholder="128000"
+            />
+          </div>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>{t('input_modalities')}</Typography.Text>
+            <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {['text', 'image', 'vision'].map(mod => {
+                const selected = model.input_modalities?.includes(mod) ?? false;
+                const label = t('modality_' + mod);
+                return (
+                  <Tag
+                    key={mod}
+                    color={selected ? 'blue' : 'default'}
+                    style={{ cursor: 'pointer', borderRadius: 4, fontSize: 11 }}
+                    onClick={() => {
+                      const current = model.input_modalities ?? [];
+                      const next = selected
+                        ? current.filter(m => m !== mod)
+                        : [...current, mod];
+                      onChange('input_modalities', next.length > 0 ? next : undefined as any);
+                    }}
+                  >
+                    {label}
+                  </Tag>
+                );
+              })}
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>{model.object}</Tag>

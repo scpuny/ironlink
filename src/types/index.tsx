@@ -15,6 +15,9 @@ export interface BackendConfig {
 }
 
 export interface ModelEntry {
+  context_window?: number;
+  max_context_window?: number;
+  input_modalities?: string[];
   id: string;
   object: string;
   created: number;
@@ -48,6 +51,26 @@ export interface AppSettings {
   start_minimized: boolean;
   config_injection_enabled: boolean;
   language: string;
+  ocr_enabled: boolean;
+  ocr_models_downloaded: boolean;
   skill_settings_enabled?: boolean;
   unified_session?: boolean;
 }
+
+// ── OCR / Image Recognition ──
+
+export interface OcrTextResult {
+  text: string;
+  confidence: number;
+  polygon: [number, number][];
+}
+
+export interface OcrStatus {
+  enabled: boolean;
+  models_downloaded: boolean;
+  models_path: string;
+}
+
+// ── Model Capabilities ──
+
+export type Modality = 'text' | 'image' | 'vision';

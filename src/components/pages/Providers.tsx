@@ -62,6 +62,9 @@ interface RelayProfile {
   modelList: string[];
   enabled: boolean;
   active: boolean;
+  modelCapabilities: Record<string, string[]>;
+  modelContextWindows: Record<string, number>;
+  modelMaxContextWindows: Record<string, number>;
 }
 
 function fromApiProfile(p: RelayProfileData): RelayProfile {
@@ -69,6 +72,9 @@ function fromApiProfile(p: RelayProfileData): RelayProfile {
     id: p.id, providerId: p.provider_id, name: p.name, baseUrl: p.base_url, apiKey: p.api_key,
     protocol: p.protocol as 'responses' | 'chatCompletions',
     model: p.model, testModel: p.test_model, modelList: p.model_list || [], active: p.active, enabled: p.enabled,
+    modelCapabilities: p.model_capabilities || {},
+    modelContextWindows: p.model_context_windows || {},
+    modelMaxContextWindows: p.model_max_context_windows || {},
   };
 }
 
@@ -77,6 +83,9 @@ function toApiProfile(p: RelayProfile): RelayProfileData {
     id: p.id, provider_id: p.providerId, name: p.name, base_url: p.baseUrl, api_key: p.apiKey,
     protocol: p.protocol, model: p.model, test_model: p.testModel,
     model_list: p.modelList, active: p.active, enabled: p.enabled,
+    model_capabilities: p.modelCapabilities,
+    model_context_windows: p.modelContextWindows,
+    model_max_context_windows: p.modelMaxContextWindows,
   };
 }
 
@@ -85,11 +94,31 @@ function genId() {
   return `prov_${Date.now().toString(36)}_${nextId++}`;
 }
 
+function autoDetectModalities(name: string): string[] {
+  const caps = ['text'];
+  const lower = name.toLowerCase();
+  const visionPrefixes = ['gpt-4o', 'gpt-4-turbo', 'gpt-5', 'claude-3-5-sonnet', 'claude-3-opus', 'claude-3-haiku', 'claude-sonnet-4', 'claude-opus-4', 'gemini-1.5', 'gemini-2.0', 'gemini-2.5', 'grok-vision', 'qwen-vl', 'llava'];
+  if (visionPrefixes.some(p => lower.startsWith(p))) caps.push('vision');
+  const genPrefixes = ['dall-e', 'stable-diffusion', 'sdxl'];
+  if (genPrefixes.some(p => lower.includes(p))) caps.push('image');
+  return caps;
+}
+
+function buildModelCapabilities(modelList: string[]): Record<string, string[]> {
+  const caps: Record<string, string[]> = {};
+  for (const m of modelList) {
+    caps[m] = autoDetectModalities(m);
+  }
+  return caps;
+}
+
 function createProfileFromPreset(preset: ProviderPreset): RelayProfile {
+  const modelList = preset.modelList || [];
   return {
     id: genId(), providerId: preset.name.toLowerCase().replace(/[^a-z0-9]/g, '-'), name: preset.name, baseUrl: preset.baseUrl, apiKey: '',
     protocol: preset.protocol, model: preset.model, testModel: preset.model,
-    modelList: preset.modelList || [], active: false, enabled: true,
+    modelList, active: false, enabled: true, modelCapabilities: buildModelCapabilities(modelList),
+    modelContextWindows: {}, modelMaxContextWindows: {},
   };
 }
 
@@ -381,32 +410,112 @@ export default function Providers() {
                 )}
               </div>
               {draft && draft.modelList.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 6, maxHeight: 180, overflowY: 'auto', padding: '4px 0' }}>
-                  {draft.modelList.map((m, i) => (
-                    <div key={i} style={{
-                      display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px',
-                      borderRadius: 6, cursor: 'pointer', fontSize: 12, lineHeight: '22px',
-                      border: '1px solid ' + (draft.model === m ? 'var(--accent-border)' : 'var(--border-subtle)'),
-                      background: draft.model === m ? 'var(--accent-bg)' : 'transparent',
-                      transition: 'all 0.15s',
-                    }}
-                      onClick={() => setDraft(p => p ? { ...p, model: m } : null)}
-                      onMouseEnter={e => { if (draft.model !== m) e.currentTarget.style.borderColor = 'var(--accent-border)'; }}
-                      onMouseLeave={e => { if (draft.model !== m) e.currentTarget.style.borderColor = 'var(--border-subtle)'; }}
-                    >
-                      <Checkbox
-                        checked={draft.modelList.includes(m)}
-                        onClick={e => e.stopPropagation()}
-                        onChange={(e) => {
-                          const next = e.target.checked
-                            ? [...draft.modelList, m]
-                            : draft.modelList.filter(x => x !== m);
-                          setDraft(p => p ? { ...p, modelList: next, model: e.target.checked && !p.model ? m : p.model } : null);
-                        }} >
-                          {m}
-                          </Checkbox>
-                    </div>
-                  ))}
+                <div style={{ maxHeight: 300, overflowY: 'auto', padding: '4px 0' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                        <th style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 500, width: 24 }}></th>
+                        <th style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 500 }}>{t('model_id')}</th>
+                        <th style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 500, width: 140 }}>{t('input_modalities')}</th>
+                        <th style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 500, width: 100 }}>ctx</th>
+                        <th style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 500, width: 100 }}>max_ctx</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {draft.modelList.map((m, i) => (
+                        <tr key={i} style={{
+                          borderBottom: '1px solid var(--border-subtle)',
+                          background: draft.model === m ? 'var(--accent-bg)' : 'transparent',
+                          cursor: 'pointer',
+                        }}
+                          onClick={() => setDraft(p => p ? { ...p, model: m } : null)}
+                        >
+                          <td style={{ padding: '4px 8px' }} onClick={e => e.stopPropagation()}>
+                            <Checkbox
+                              checked={true}
+                              onChange={(e) => {
+                                const next = e.target.checked
+                                  ? [...draft.modelList, m]
+                                  : draft.modelList.filter(x => x !== m);
+                                const caps = e.target.checked
+                                  ? { ...draft.modelCapabilities, [m]: autoDetectModalities(m) }
+                                  : (() => { const c = { ...draft.modelCapabilities }; delete c[m]; return c; })();
+                                const cw = e.target.checked
+                                  ? draft.modelContextWindows
+                                  : (() => { const c = { ...draft.modelContextWindows }; delete c[m]; return c; })();
+                                const mcw = e.target.checked
+                                  ? draft.modelMaxContextWindows
+                                  : (() => { const c = { ...draft.modelMaxContextWindows }; delete c[m]; return c; })();
+                                setDraft(p => p ? { ...p, modelList: next, model: e.target.checked && !p.model ? m : p.model, modelCapabilities: caps, modelContextWindows: cw, modelMaxContextWindows: mcw } : null);
+                              }} />
+                          </td>
+                          <td style={{ padding: '4px 8px', fontFamily: 'monospace', fontSize: 12 }}
+                            onClick={() => setDraft(p => p ? { ...p, model: m } : null)}>
+                            {m}
+                          </td>
+                          <td style={{ padding: '4px 8px' }}>
+                            <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+                              {['text', 'image', 'vision'].map(mod => {
+                                const current = draft.modelCapabilities?.[m] || autoDetectModalities(m);
+                                const selected = current.includes(mod);
+                                const colors: Record<string, { bg: string; fg: string }> = {
+                                  text: { bg: '#1a3a1a', fg: '#5cb85c' },
+                                  vision: { bg: '#1a2a4a', fg: '#5b9bd5' },
+                                  image: { bg: '#3a1a3a', fg: '#b85cb8' },
+                                };
+                                const c = colors[mod] || { bg: '#2a2a2a', fg: '#aaa' };
+                                return (
+                                  <Tag key={mod}
+                                    style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 4px', cursor: 'pointer', background: selected ? c.bg : 'transparent', color: selected ? c.fg : 'var(--text-muted)', border: '1px solid ' + (selected ? c.bg : 'var(--border-subtle)'), borderRadius: 3 }}
+                                    onClick={() => {
+                                      const current = draft.modelCapabilities?.[m] || autoDetectModalities(m);
+                                      const next = selected ? current.filter((x: string) => x !== mod) : [...current, mod];
+                                      setDraft(p => p ? { ...p, modelCapabilities: { ...p.modelCapabilities, [m]: next } } : null);
+                                    }}>
+                                    {mod === 'text' ? t('modality_text') : mod === 'image' ? t('modality_image') : t('modality_vision')}
+                                  </Tag>
+                                );
+                              })}
+                            </div>
+                          </td>
+                          <td style={{ padding: '4px 8px' }} onClick={e => e.stopPropagation()}>
+                            <Input
+                              size="small"
+                              type="number"
+                              value={draft.modelContextWindows?.[m] ?? ''}
+                              placeholder="default"
+                              style={{ width: 90, borderRadius: 4, fontSize: 11 }}
+                              onChange={e => {
+                                setDraft(p => {
+                                  if (!p) return p;
+                                  const cw = { ...p.modelContextWindows };
+                                  if (e.target.value) cw[m] = Number(e.target.value);
+                                  else delete cw[m];
+                                  return { ...p, modelContextWindows: cw };
+                                });
+                              }} />
+                          </td>
+                          <td style={{ padding: '4px 8px' }} onClick={e => e.stopPropagation()}>
+                            <Input
+                              size="small"
+                              type="number"
+                              value={draft.modelMaxContextWindows?.[m] ?? ''}
+                              placeholder="default"
+                              style={{ width: 90, borderRadius: 4, fontSize: 11 }}
+                              onChange={e => {
+                                setDraft(p => {
+                                  if (!p) return p;
+                                  const mcw = { ...p.modelMaxContextWindows };
+                                  if (e.target.value) mcw[m] = Number(e.target.value);
+                                  else delete mcw[m];
+                                  return { ...p, modelMaxContextWindows: mcw };
+                                });
+                              }} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>

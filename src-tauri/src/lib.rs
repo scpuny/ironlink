@@ -2,6 +2,7 @@
 pub mod api;
 pub mod config;
 pub mod models;
+pub mod ocr;
 pub mod protocol;
 pub mod proxy;
 pub mod commands;
@@ -16,13 +17,16 @@ use axum::{
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
-use tauri::Manager;
+use tauri::{Emitter, 
+    Manager,
+    menu::{MenuBuilder, SubmenuBuilder, MenuItemBuilder, PredefinedMenuItem},
+    tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState},
+};
+use tauri_plugin_dialog;
 use crate::config::AppState;
 
 /// Start the Axum proxy server on the port from settings.
-/// Uses graceful shutdown — call `stop_proxy_server` to send the shutdown signal.
 pub async fn start_proxy_server(state: Arc<AppState>) {
-    // Prevent double-start
     if state.proxy_shutdown_tx.lock().await.is_some() {
         tracing::warn!("Proxy server already running, ignoring start request");
         return;
@@ -51,7 +55,6 @@ pub async fn start_proxy_server(state: Arc<AppState>) {
     };
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
-    // Kill old process on this port
     let _ = std::process::Command::new("sh")
         .args(["-c", &format!("lsof -ti :{} | xargs kill 2>/dev/null", port)])
         .output();
@@ -77,13 +80,11 @@ pub async fn start_proxy_server(state: Arc<AppState>) {
         tracing::error!("Proxy server error: {e}");
     }
 
-    // Clean up after server stops
     *state.proxy_shutdown_tx.lock().await = None;
     *state.proxy_enabled.lock().await = false;
     info!("Proxy server stopped");
 }
 
-/// Send graceful shutdown signal to the running proxy server.
 pub async fn stop_proxy_server(state: Arc<AppState>) {
     if let Some(tx) = state.proxy_shutdown_tx.lock().await.take() {
         let _ = tx.send(());
@@ -91,6 +92,31 @@ pub async fn stop_proxy_server(state: Arc<AppState>) {
     } else {
         tracing::warn!("No proxy server running to stop");
     }
+}
+
+/// App-level cleanup: stop proxy, restore configs, free OCR.
+async fn cleanup(state: Arc<AppState>) {
+    // Stop proxy if running
+    let enabled = *state.proxy_enabled.lock().await;
+    if enabled {
+        tracing::info!("Stopping proxy server...");
+        stop_proxy_server(state.clone()).await;
+
+        let apps = state.apps.lock().await.clone();
+        for app in apps.iter().filter(|a| a.config_injection.is_some()) {
+            if let Some(inj) = &app.config_injection {
+                if inj.backup_enabled {
+                    crate::config::restore_app_config(inj);
+                }
+            }
+        }
+        crate::config::restore_codex_configs();
+    }
+
+    // Free OCR engine memory
+    crate::ocr::shutdown();
+
+    tracing::info!("Cleanup complete");
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -138,46 +164,181 @@ pub fn run() {
             commands::settings_cmd::save_settings,
             commands::settings_cmd::export_config,
             commands::settings_cmd::import_config,
+            commands::ocr::check_ocr_status,
+            commands::ocr::run_ocr,
+            commands::status::quit_app,
+            commands::status::hide_window,
+            commands::status::check_version,
         ])
-        .setup(move |_app| {
+        .setup(move |app| {
             info!("Tauri UI started (proxy server starts on demand)");
+
+            // ── macOS menu with i18n ──
+            #[cfg(target_os = "macos")]
+            {
+                // Read current language setting for menu labels
+                let lang = crate::config::settings::AppSettings::load().language;
+                let file_label = if lang == "zh" { "文件" } else { "File" };
+                let edit_label = if lang == "zh" { "编辑" } else { "Edit" };
+                let view_label = if lang == "zh" { "窗口" } else { "Window" };
+
+                let file_menu = SubmenuBuilder::new(app, file_label)
+                    .item(&MenuItemBuilder::with_id("prefs", if lang == "zh" { "设置…" } else { "Settings…" }).build(app)?)
+                    .separator()
+                    .item(&MenuItemBuilder::with_id("hide", if lang == "zh" { "隐藏 IronLink" } else { "Hide IronLink" }).accelerator("Cmd+H").build(app)?)
+                    .item(&PredefinedMenuItem::quit(app, None)?)
+                    .build()?;
+
+                let edit_menu = SubmenuBuilder::new(app, edit_label)
+                    .item(&PredefinedMenuItem::undo(app, None)?)
+                    .item(&PredefinedMenuItem::redo(app, None)?)
+                    .separator()
+                    .item(&PredefinedMenuItem::cut(app, None)?)
+                    .item(&PredefinedMenuItem::copy(app, None)?)
+                    .item(&PredefinedMenuItem::paste(app, None)?)
+                    .item(&PredefinedMenuItem::select_all(app, None)?)
+                    .build()?;
+
+                let window_menu = SubmenuBuilder::new(app, view_label)
+                    .item(&PredefinedMenuItem::minimize(app, None)?)
+                    .build()?;
+
+                let menu = MenuBuilder::new(app)
+                    .items(&[&file_menu, &edit_menu, &window_menu])
+                    .build()?;
+
+                app.set_menu(menu)?;
+            }
+
+            // ── System tray ──
+            let show_item = MenuItemBuilder::with_id("show", "Show Window")
+                .build(app)?;
+            let quit_item = MenuItemBuilder::with_id("quit", "Quit")
+                .build(app)?;
+            let tray_menu = tauri::menu::MenuBuilder::new(app)
+                .item(&show_item)
+                .item(&quit_item)
+                .build()?;
+
+            TrayIconBuilder::new()
+                .tooltip("IronLink")
+                .menu(&tray_menu)
+                .icon(app.default_window_icon().unwrap().clone())
+                .on_menu_event(move |app_handle, event| {
+                    match event.id().as_ref() {
+                        "show" => {
+                            if let Some(window) = app_handle.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            // Run cleanup synchronously before exit
+                            let s: tauri::State<'_, Arc<AppState>> = app_handle.state();
+                            let state = s.inner().clone();
+                            tauri::async_runtime::block_on(async move {
+                                cleanup(state).await;
+                            });
+                            app_handle.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray_handle, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event {
+                        let app = tray_handle.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // ── OCR init ──
+            let model_dir = app.path()
+                .resolve("models/ppocrv5", tauri::path::BaseDirectory::Resource)
+                .unwrap_or_else(|_| {
+                    let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("resources/models/ppocrv5");
+                    if dev.exists() {
+                        dev
+                    } else {
+                        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                            .join("src/resources/models/ppocrv5")
+                    }
+                });
+            crate::ocr::init(model_dir.clone());
+
+            if crate::ocr::models_ready() {
+                tauri::async_runtime::spawn(async move {
+                    tracing::info!("OCR engine warmup started in background...");
+                    let ready = crate::ocr::warmup();
+                    tracing::info!("OCR engine warmup {}",
+                        if ready { "complete" } else { "failed" });
+                });
+            } else {
+                tracing::warn!("OCR models not found at {:?}, OCR disabled", model_dir);
+            }
+
+            // Auto-start proxy if setting enabled
+            {
+                let settings = crate::config::settings::AppSettings::load();
+                if settings.auto_start {
+                    let state: tauri::State<'_, Arc<AppState>> = app.state();
+                    let state_clone = state.inner().clone();
+                    tauri::async_runtime::spawn(async move {
+                        // Small delay to let everything settle
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        let enabled = *state_clone.proxy_enabled.lock().await;
+                        if !enabled {
+                            *state_clone.proxy_enabled.lock().await = true;
+                            crate::start_proxy_server(state_clone).await;
+                        }
+                    });
+                }
+            }
+
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(move |app_handle, event| {
-            if let tauri::RunEvent::Exit = event {
-                tracing::info!("App exiting: cleaning up and restoring all configs");
-
-                // Spawn cleanup; the runtime is still alive during Exit
-                let h = app_handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    let state: tauri::State<'_, Arc<AppState>> = h.state::<Arc<AppState>>();
-                    let s = state.inner().clone();
-
-                    // ── 1. Stop proxy if running ──
-                    let enabled = *s.proxy_enabled.lock().await;
-                    if enabled {
-                        tracing::info!("Stopping proxy server...");
-                        crate::stop_proxy_server(s.clone()).await;
-
-                        // ── 2. Restore backed-up app configs only when proxy was ON ──
-                        // When proxy was disabled normally, toggle_proxy(false) already restored backups.
-                        // This is a safety net for crashes / unclean exits.
-                        let apps = s.apps.lock().await.clone();
-                        for app in apps.iter().filter(|a| a.config_injection.is_some()) {
-                            if let Some(inj) = &app.config_injection {
-                                if inj.backup_enabled {
-                                    crate::config::restore_app_config(inj);
-                                }
+            match event {
+                // Window close → hide to tray if setting enabled
+                tauri::RunEvent::WindowEvent { label: _, event: window_event, .. } => {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = window_event {
+                        let s: tauri::State<'_, Arc<AppState>> = app_handle.state();
+                        let settings = s.settings.blocking_lock();
+                        if settings.minimize_to_tray_on_close {
+                            // Auto-hide to tray without dialog
+                            drop(settings);
+                            drop(api);
+                            if let Some(window) = app_handle.get_webview_window("main") {
+                                let _ = window.hide();
                             }
+                        } else {
+                            drop(settings);
+                            api.prevent_close();
+                            // Ask frontend to show quit/hide dialog
+                            let _ = app_handle.emit("close-requested", ());
                         }
-                        // Legacy fallback
-                        crate::config::restore_codex_configs();
                     }
-
-                    tracing::info!("Cleanup complete on exit");
-                });
+                }
+                // App exit → cleanup everything
+                tauri::RunEvent::Exit => {
+                    tracing::info!("App exiting: cleaning up...");
+                    let s: tauri::State<'_, Arc<AppState>> = app_handle.state();
+                    let state = s.inner().clone();
+                    tauri::async_runtime::block_on(async move {
+                        cleanup(state).await;
+                    });
+                }
+                _ => {}
             }
         });
 }

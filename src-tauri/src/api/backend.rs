@@ -29,7 +29,7 @@ pub async fn toggle_proxy_handler(State(state): State<Arc<AppState>>, Json(body)
     let pcfg = state.proxy_config.lock().await.clone();
     let profiles = state.relay_profiles.lock().await.clone();
     let apps = state.apps.lock().await.clone();
-    let result = config::toggle_proxy(body.enabled, &pcfg.default_model, &pcfg.reasoning_effort, &profiles, &apps);
+    let models = state.models.lock().await.clone();    let result = config::toggle_proxy(body.enabled, &pcfg.default_model, &pcfg.reasoning_effort, &profiles, &apps, &models);
     *state.proxy_enabled.lock().await = body.enabled;
     Json(result)
 }

@@ -76,4 +76,7 @@ fn default_backup_enabled() -> bool { true }
 pub struct MappingTarget {
     pub provider_id: String,
     pub upstream_model: String,
+    /// When true and the upstream model lacks vision capability, run OCR on images.
+    #[serde(default)]
+    pub ocr_fallback: bool,
 }
