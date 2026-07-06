@@ -25,7 +25,6 @@ pub struct CodexToolContext {
 }
 
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
 struct FunctionToolSpec {
     pub namespace: String,
     pub name: String,
@@ -47,7 +46,11 @@ impl CodexToolContext {
             let tool_type = tool.get("type").and_then(Value::as_str).unwrap_or("");
             match tool_type {
                 "function" => {
-                    if let Some(name) = tool.get("name").and_then(Value::as_str).filter(|v| !v.is_empty()) {
+                    // Support both flat format {type:"function", name:"x"} and
+                    // nested format {type:"function", function:{name:"x"}}
+                    let name_val = tool.get("name").and_then(Value::as_str)
+                        .or_else(|| tool.pointer("/function/name").and_then(Value::as_str));
+                    if let Some(name) = name_val.filter(|v| !v.is_empty()) {
                         ctx.function_tools.insert(name.to_string(), FunctionToolSpec { name: name.to_string(), namespace: String::new() });
                     }
                 }
@@ -57,6 +60,30 @@ impl CodexToolContext {
                         ctx.custom_tools.insert(name.to_string(), CustomToolSpec { openai_name: name.to_string(), built_in });
                         ctx.has_custom_tools = true;
                         ctx.register_apply_patch_subtools(name);
+                    }
+                }
+                "namespace" => {
+                    if let Some(children) = tool.get("tools").and_then(Value::as_array) {
+                        let namespace = tool.get("name").and_then(Value::as_str).unwrap_or("");
+                        for child in children {
+                            let child_type = child.get("type").and_then(Value::as_str).unwrap_or("");
+                            let Some(cname) = child.get("name").and_then(Value::as_str).filter(|v| !v.is_empty()) else {
+                                continue;
+                            };
+                            let flat = format!("{}__{}", namespace, cname);
+                            match child_type {
+                                "function" => {
+                                    ctx.function_tools.insert(flat, FunctionToolSpec { name: cname.to_string(), namespace: namespace.to_string() });
+                                }
+                                "custom" | "web_search" | "local_shell" | "computer_use" => {
+                                    let built_in = matches!(child_type, "web_search" | "local_shell" | "computer_use");
+                                    ctx.custom_tools.insert(flat, CustomToolSpec { openai_name: cname.to_string(), built_in });
+                                    ctx.has_custom_tools = true;
+                                }
+                                _ => {}
+                            }
+                        }
+                        ctx.has_namespace_tools = true;
                     }
                 }
                 _ => {}
@@ -88,5 +115,20 @@ impl CodexToolContext {
     /// Return the original custom tool name as declared by Codex.
     pub fn original_custom_tool_name(&self, name: &str) -> String {
         self.custom_tools.get(name).map(|s| s.openai_name.clone()).unwrap_or_else(|| name.to_string())
+    }
+
+    /// [FIX #48] Look up original function tool name and namespace from flat Chat name.
+    /// Returns (original_name, namespace) — namespace is empty for non-namespace functions.
+    pub fn original_function_tool_name(&self, flat_name: &str) -> (String, String) {
+        if let Some(spec) = self.function_tools.get(flat_name) {
+            let name = if spec.name.is_empty() {
+                flat_name.to_string()
+            } else {
+                spec.name.clone()
+            };
+            (name, spec.namespace.clone())
+        } else {
+            (flat_name.to_string(), String::new())
+        }
     }
 }

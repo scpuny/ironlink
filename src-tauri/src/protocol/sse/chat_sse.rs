@@ -379,13 +379,25 @@ impl ChatSseState {
             let is_custom = self.tool_context.is_custom_tool_proxy(&state.name);
             let original_name = self.tool_context.original_custom_tool_name(&state.name);
             let item_type = if is_custom { "custom_tool_call" } else { "function_call" };
-            let name_for_sse = if is_custom { &original_name } else { &state.name };
+            let (display_name, namespace) = if is_custom {
+                (original_name.clone(), String::new())
+            } else {
+                // [FIX #48] Look up namespace for function_call items
+                self.tool_context.original_function_tool_name(&state.name)
+            };
+            let name_for_sse = if is_custom { &original_name } else { &display_name };
 
+            let mut item_obj = serde_json::json!({
+                "id": &state.item_id, "type": item_type, "status": "in_progress",
+                "call_id": &state.call_id, "name": name_for_sse,
+                "arguments": "", "input": ""
+            });
+            if !is_custom && !namespace.is_empty() {
+                item_obj["namespace"] = serde_json::json!(namespace);
+            }
             push_sse(out, SSE_OUTPUT_ITEM_ADDED, serde_json::json!({
                 "type": SSE_OUTPUT_ITEM_ADDED, "output_index": assigned,
-                "item": {"id": &state.item_id, "type": item_type, "status": "in_progress",
-                         "call_id": &state.call_id, "name": name_for_sse,
-                         "arguments": "", "input": ""}
+                "item": item_obj
             }));
         }
         if !args_delta.is_empty() {
@@ -469,9 +481,11 @@ impl ChatSseState {
             if state.name.is_empty() { state.name = "unknown_tool".to_string(); }
             state.output_index = Some(assigned);
             state.item_id = format!("fc_{}", state.call_id);
+            let (_display_name_p, _namespace_p) = self.tool_context.original_function_tool_name(&state.name);
             push_sse(out, SSE_OUTPUT_ITEM_ADDED, serde_json::json!({
                 "type": SSE_OUTPUT_ITEM_ADDED, "output_index": assigned,
-                "item": {"id": &state.item_id, "type": "function_call", "status": "in_progress","call_id": &state.call_id, "name": &state.name, "arguments": ""}
+                "item": {"id": &state.item_id, "type": "function_call", "status": "in_progress",
+                         "call_id": &state.call_id, "name": &state.name, "arguments": ""}
             }));
         }
         for key in keys {
@@ -485,10 +499,16 @@ impl ChatSseState {
             let item = if is_custom {
                 custom_tool_output_item(state, &self.tool_context)
             } else {
-                serde_json::json!({
+                // [FIX #48] Add namespace field to function_call completed items
+                let (display_name, namespace) = self.tool_context.original_function_tool_name(&state.name);
+                let mut fc_item = serde_json::json!({
                     "id": &state.item_id, "type": "function_call", "status": "completed",
-                    "call_id": &state.call_id, "name": &state.name, "arguments": &state.arguments
-                })
+                    "call_id": &state.call_id, "name": display_name, "arguments": &state.arguments
+                });
+                if !namespace.is_empty() {
+                    fc_item["namespace"] = serde_json::json!(namespace);
+                }
+                fc_item
             };
 
             state.done = true;

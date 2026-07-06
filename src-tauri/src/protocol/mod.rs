@@ -35,10 +35,10 @@ pub fn responses_to_upstream(body: &Value, output_protocol: &str) -> anyhow::Res
 }
 
 /// Convert an upstream response body to Responses API format.
-pub fn upstream_to_responses(body: &Value, input_protocol: &str) -> anyhow::Result<Value> {
+pub fn upstream_to_responses(body: &Value, input_protocol: &str, original_request: Option<&Value>) -> anyhow::Result<Value> {
     match input_protocol {
         "chat_completions" | "openai-chat" | "chatCompletions" => {
-            convert::chat_to_responses(body, None)
+            convert::chat_to_responses(body, original_request)
         }
         "anthropic" => anthropic_response_fallback(body),
         "responses" | "openai-responses" | "openai_responses" => Ok(body.clone()),
@@ -85,16 +85,24 @@ fn direct_parse_anthropic_response(body: &Value) -> anyhow::Result<ProtocolRespo
             }
             "thinking" | "reasoning" => {
                 if let Some(t) = block.get("thinking").or_else(|| block.get("text")).and_then(Value::as_str) {
-                    if !t.is_empty() { output.push(OutputItem::Reasoning { text: t.to_string() }); }
-                }
-                if let Some(sig) = block.get("signature").and_then(Value::as_str) {
-                    text_parts.push(format!("\n\n<thinking_signature>{sig}</thinking_signature>"));
+                    let mut reasoning_text = t.to_string();
+                    // Include signature if present (for extended thinking continuation)
+                    if let Some(sig) = block.get("signature").and_then(Value::as_str) {
+                        if !sig.is_empty() {
+                            reasoning_text.push_str(&format!("\n\n<thinking_signature>{sig}</thinking_signature>"));
+                        }
+                    }
+                    output.push(OutputItem::Reasoning { text: reasoning_text });
                 }
             }
             "tool_use" => {
                 let id = block.get("id").and_then(Value::as_str).unwrap_or("").to_string();
                 let name = block.get("name").and_then(Value::as_str).unwrap_or("").to_string();
-                let input = block.get("input").map(|v| serde_json::to_string(v).unwrap_or_default()).unwrap_or_default();
+                // Anthropic sends input as JSON object; serialize for standard format
+                let input = block.get("input").map(|v| {
+                    if v.is_string() { v.as_str().unwrap_or("").to_string() }
+                    else { serde_json::to_string(v).unwrap_or_default() }
+                }).unwrap_or_default();
                 tool_calls.push(ToolCall {
                     id, name, arguments: input,
                     tool_type: ToolType::Function,
@@ -126,22 +134,35 @@ fn direct_parse_anthropic_response(body: &Value) -> anyhow::Result<ProtocolRespo
         });
     }
 
+    // Parse stop_reason for proper status
+    let stop_reason = body.get("stop_reason").and_then(Value::as_str);
+    let status = match stop_reason {
+        Some("max_tokens") => ResponseStatus::Incomplete,
+        Some("error") => ResponseStatus::Failed,
+        _ => ResponseStatus::Completed,
+    };
+
     let usage_obj = body.get("usage").unwrap_or(&Value::Null);
-    let input_tokens = usage_obj.get("input_tokens").and_then(Value::as_u64).or_else(|| usage_obj.get("prompt_tokens").and_then(Value::as_u64)).unwrap_or(0);
-    let output_tokens = usage_obj.get("output_tokens").and_then(Value::as_u64).or_else(|| usage_obj.get("completion_tokens").and_then(Value::as_u64)).unwrap_or(0);
+    let input_tokens = usage_obj.get("input_tokens").and_then(Value::as_u64)
+        .or_else(|| usage_obj.get("prompt_tokens").and_then(Value::as_u64)).unwrap_or(0);
+    let output_tokens = usage_obj.get("output_tokens").and_then(Value::as_u64)
+        .or_else(|| usage_obj.get("completion_tokens").and_then(Value::as_u64)).unwrap_or(0);
+    let cached_input_tokens = usage_obj.get("cache_read_input_tokens")
+        .and_then(Value::as_u64);
 
     Ok(ProtocolResponse {
         id: body.get("id").and_then(Value::as_str).unwrap_or("").to_string(),
         model: body.get("model").and_then(Value::as_str).unwrap_or("").to_string(),
-        created_at: 0,
-        status: ResponseStatus::Completed,
+        created_at: body.get("created").and_then(Value::as_u64).unwrap_or(0),
+        status,
         output,
         usage: Usage {
             input_tokens, output_tokens,
             total_tokens: input_tokens + output_tokens,
-            cached_input_tokens: None,
-            extra: Vec::new(),
+            cached_input_tokens,
+            extra: vec![],
         },
         passthrough: PassthroughFields::default(),
     })
 }
+

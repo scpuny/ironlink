@@ -62,7 +62,15 @@ impl InputProtocol for ResponsesInput {
                 response_format: body.get("response_format").cloned(),
                 frequency_penalty: body.get("frequency_penalty").and_then(Value::as_f64).map(|v| v as f32),
                 presence_penalty: body.get("presence_penalty").and_then(Value::as_f64).map(|v| v as f32),
-                stop_sequences: None,
+                // [FIX Gap A] Map Responses API "stop" to Anthropic "stop_sequences".
+                // Responses stop is string|array<string>; Anthropic needs Vec<String>.
+                stop_sequences: body.get("stop").map(|v| match v {
+                    Value::String(s) if !s.is_empty() => vec![s.clone()],
+                    Value::Array(arr) => arr.iter()
+                        .filter_map(|i| i.as_str().filter(|s| !s.is_empty()).map(String::from))
+                        .collect(),
+                    _ => vec![],
+                }).filter(|v: &Vec<String>| !v.is_empty()),
                 other: collect_extra_fields(body, &["model", "input", "instructions", "tools", "tool_choice",
                     "reasoning", "max_output_tokens", "max_tokens", "temperature", "top_p", "stream",
                     "stream_options", "metadata", "parallel_tool_calls", "user", "seed", "stop",

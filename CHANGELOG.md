@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ---
+## v0.3.6 (2026-07-06)
+
+### 协议转换全面对齐 / Full Protocol Conversion Alignment
+
+此版本对 Codex Responses API ↔ Chat Completions ↔ Anthropic Messages API 间的全部六条协议转换路径进行了系统性修复，对齐 CodexPlusPlus 的行为规范。
+
+#### Responses → Chat 请求转换 (`protocol/convert.rs`)
+- **🟡 tool_choice 条件写入** — 仅在 `has_chat_tools` 为 true 时写入 tool_choice，避免上游在 tools 为空时收到意外字段
+- **🟡 parallel_tool_calls 透传** — 请求侧与响应侧均透传该字段，保持 Codex 并行工具控制
+- **🟡 normalize_chat_messages** — 确保 `assistant` 消息有 `tool_calls` 但无 `content` 时补空字符串，避免某些上游 API 拒绝请求
+- **🟡 tool_choice + reasoning 交互** — reasoning 模式下强制 `tool_choice=auto`，vLLM 不会因缺字段而禁用所有工具
+- **🟡 capabilities/命名空间 description 合并** — 合并 namespace 级和子工具级描述 (#17)
+- **🟡 工具名 64 字符截断** — 超长工具名自动截断 + 8 位 hash 后缀防冲突 (#19)
+- **🟡 Custom 工具 FREEFORM description** — 空描述时输出 `FREEFORM custom tool: {name}`，非空时追加 `This is a FREEFORM tool...` 提示 (#13)
+
+#### 消息历史转换增强
+- **🟡 input 支持 Object 类型** — 单对象输入（非数组包裹）正确处理 (#24)
+- **🟡 custom_tool_call 历史包装** — 改为 `{"input": raw_text}` 格式，与 CodexPlusPlus 一致 (#26)
+- **🟡 function_call_output 标准化** — JSON 可解析时重序列化，不能时包装为 `{"input": raw}` (#30)
+- **🟡 tool_result 三级 fallback** — `content.tool_use_id` → `tool_call_id` → `call_id` (#28)
+- **🟡 reasoning 合并去重** — 追加到现有 assistant 消息而非覆盖 (#32)
+- **🟡 tool_calls 合并去重** — 按 `call_id` 合并而非直接替换 (#34)
+- **🟡 orphan tool_output → user 回退** — 未匹配 call_id 的 tool result 包装为 user 消息 (#33)
+- **🟡 responses_role_to_chat_role** — 支持 `latest_reminder` 角色映射 (#35)
+
+#### Responses → Anthropic 请求转换 (`protocol/output/anthropic.rs`)
+- **🟡 tools 透传** — 新增 `build_anthropic_tool()`，将 Responses tools 转为 Anthropic `input_schema` 格式
+- **🟡 tool_choice 映射** — 新增 `convert_tool_choice()`，支持 `auto→{type:auto}` / `required→{type:any}` / `function→{type:tool}`
+- **🟡 tool_result 格式修正** — 使用标准 `tool_result` content block
+- **🟡 tool_use 格式修正** — assistant 消息中的 tool_calls 转为 `tool_use` blocks
+- **🟡 thinking 配置** — 从 reasoning.effort 映射到 `{type:enabled, budget_tokens:N}`
+- **🟡 stop_sequences 透传** — Responses `stop` → Anthropic `stop_sequences` 映射
+- **🟡 工具名截断 + FREEFORM 描述** — 对齐 Chat 路径行为
+
+#### Anthropic → Responses 非流式响应 (`protocol/mod.rs`)
+- **🟡 stop_reason 解析** — `max_tokens`→Incomplete, `error`→Failed
+- **🟡 created_at** — 从 Anthropic body 中读取
+- **🟡 cache_read_input_tokens** — 透传到 Responses usage
+
+#### 流式 SSE 转换
+- **Chat SSE → Responses SSE (`protocol/sse/chat_sse.rs`)**
+  - 🟡 function_call namespace 字段回填 — SSE 事件中携带 namespace，Codex 可逆向映射到原始工具
+  - 🟡 custom_tool_call_input.delta 事件 — 用于 context compaction 后的工具状态恢复
+  - 🟡 custom/function 两路工具判断 — 完整支持两种工具类型的输出格式
+  
+- **Anthropic SSE → Responses SSE (`protocol/sse/anthropic_sse.rs`)**
+  - 🟡 tool_use `content_block_start` → function_call 事件
+  - 🟡 `input_json_delta` → function_call_arguments.delta
+  - 🟡 tool_use `content_block_stop` → function_call_arguments.done + output_item.done
+  - 🟡 thinking `signature_delta` → signature 追踪，最终写入 reasoning 项 signature 字段
+  - 🟡 thinking `content_block_stop` → reasoning output_item.done
+
+#### 工具注册注入 (`protocol/tool_context.rs` + `protocol/tools/context.rs`)
+- **🟡 add_namespace_tools 支持 custom/built-in 子工具** — CodeGraph 等 namespace 内自定义工具不再被过滤
+- **🟡 SSE CodexToolContext 增加 namespace 查询方法** — `original_function_tool_name()` 支持 flat name → (原始名称, namespace) 逆向映射
+
+---
 ## v0.3.5 (2026-07-05)
 
 ### 严重修复 / Critical Fixes

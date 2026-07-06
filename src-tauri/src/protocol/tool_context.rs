@@ -181,7 +181,12 @@ impl ToolContext {
                     ctx.has_custom_tools = true;
                 }
                 "function" => {
-                    if let Some(name) = tool.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()) {
+                    // Support both flat format {type:"function", name:"x"} and
+                    // nested format {type:"function", function:{name:"x"}}
+                    let name = tool.get("name").and_then(Value::as_str)
+                        .or_else(|| tool.pointer("/function/name").and_then(Value::as_str))
+                        .filter(|n| !n.is_empty());
+                    if let Some(name) = name {
                         ctx.function_tools.insert(
                             name.to_string(),
                             FunctionToolSpec {
@@ -223,22 +228,40 @@ fn add_namespace_tools(ctx: &mut ToolContext, namespace_tool: &Value) {
         return;
     };
     for child in children {
-        if child.get("type").and_then(Value::as_str) != Some("function") {
-            continue;
-        }
+        let tool_type = child.get("type").and_then(Value::as_str).unwrap_or("");
         let Some(name) = child.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()) else {
             continue;
         };
         let flat = flatten_namespace_name(namespace, name);
-        if ctx.function_tools.get(&flat).is_none_or(|spec| !spec.namespace.is_empty()) {
-            ctx.function_tools.insert(
-                flat,
-                FunctionToolSpec {
-                    namespace: namespace.to_string(),
-                    name: name.to_string(),
-                },
-            );
-            ctx.has_namespace_tools = true;
+
+        match tool_type {
+            "function" => {
+                if ctx.function_tools.get(&flat).is_none_or(|spec| !spec.namespace.is_empty()) {
+                    ctx.function_tools.insert(
+                        flat,
+                        FunctionToolSpec {
+                            namespace: namespace.to_string(),
+                            name: name.to_string(),
+                        },
+                    );
+                    ctx.has_namespace_tools = true;
+                }
+            }
+            "custom" | "web_search" | "local_shell" | "computer_use" => {
+                // Namespace-inner custom/built-in tools (e.g. CodeGraph tools)
+                let kind = detect_custom_kind(child, name);
+                ctx.custom_tools.insert(
+                    flat,
+                    CustomToolSpec {
+                        responses_name: name.to_string(),
+                        kind,
+                        proxy_action: None,
+                    },
+                );
+                ctx.has_custom_tools = true;
+                ctx.has_namespace_tools = true;
+            }
+            _ => {} // skip unknown
         }
     }
 }
@@ -274,25 +297,39 @@ fn proxy_action_from_name(name: &str) -> Option<PatchProxyAction> {
 
 /// Format: `namespace_name` (underscore separator)
 pub fn flatten_namespace_name(namespace: &str, name: &str) -> String {
-    format!("{namespace}_{name}")
+    if namespace.is_empty() { return name.to_string(); }
+    format!("{namespace}__{name}")
 }
 
 // ── Helper: build chat function tool for custom tools ──
 
 /// Build a generic custom proxy tool in Chat Completions format.
 pub fn build_custom_proxy_tool(name: &str, description: &str) -> Value {
+    // [FIX #13] Match CodexPlusPlus generic_custom_proxy_tool:
+    // - Empty description → FREEFORM annotation
+    // - Non-empty description → preserve + add FREEFORM note
+    let tool_description = if description.trim().is_empty() {
+        format!("FREEFORM custom tool: {name}. Put only the tool input text here.")
+    } else {
+        format!(
+            "{}
+
+This is a FREEFORM tool. Do not wrap the input in JSON or markdown.",
+            description.trim()
+        )
+    };
     serde_json::json!({
         "type": "function",
         "function": {
             "name": name,
-            "description": description,
+            "description": tool_description,
             "parameters": {
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
                     "input": {
                         "type": "string",
-                        "description": "Raw freeform input for this custom tool. Put only the tool input text here."
+                        "description": "Raw freeform input for this custom tool."
                     }
                 },
                 "required": ["input"]

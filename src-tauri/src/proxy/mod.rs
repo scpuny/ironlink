@@ -292,7 +292,7 @@ pub async fn handle_proxy(
             .unwrap()
     } else {
         let bytes = resp.bytes().await.unwrap_or_default();
-        let converted = convert_response(&bytes, &protocol);
+        let converted = convert_response(&bytes, &protocol, Some(&body_val));
 
         Response::builder()
             .status(StatusCode::OK)
@@ -327,12 +327,12 @@ fn convert_request(body: &serde_json::Value, protocol: &str) -> anyhow::Result<V
 }
 
 /// Convert upstream JSON response back to Responses API wire format.
-fn convert_response(bytes: &[u8], protocol: &str) -> Vec<u8> {
+fn convert_response(bytes: &[u8], protocol: &str, original_request: Option<&serde_json::Value>) -> Vec<u8> {
     match protocol {
         "responses" | "openai-responses" | "openai_responses" => bytes.to_vec(),
         "chat_completions" | "openai-chat" | "chatCompletions" => {
             match serde_json::from_slice::<serde_json::Value>(bytes) {
-                Ok(v) => match protocol::upstream_to_responses(&v, "chat_completions") {
+                Ok(v) => match protocol::upstream_to_responses(&v, "chat_completions", original_request) {
                     Ok(converted) => serde_json::to_vec(&converted).unwrap_or_else(|_| {
                         tracing::warn!("Failed to serialize chat response conversion result, using raw bytes");
                         bytes.to_vec()
@@ -350,7 +350,7 @@ fn convert_response(bytes: &[u8], protocol: &str) -> Vec<u8> {
         }
         "anthropic" => {
             match serde_json::from_slice::<serde_json::Value>(bytes) {
-                Ok(v) => match protocol::upstream_to_responses(&v, "anthropic") {
+                Ok(v) => match protocol::upstream_to_responses(&v, "anthropic", None) {
                     Ok(converted) => serde_json::to_vec(&converted).unwrap_or_else(|_| {
                         tracing::warn!("Failed to serialize anthropic response conversion result, using raw bytes");
                         bytes.to_vec()
